@@ -109,8 +109,11 @@ class PlayerUnitOrdersTest {
         assertFalse(operations.tryOrder(worker, Order.SLEEP))
         worker.currentTile.stopWorkingOnImprovement()
         warrior.currentMovement = 0f
-        assertTrue(operations.orders(warrior).all { !it.available })
-        assertTrue(operations.orders(warrior).all { "No movement remaining" in it.unavailableReasons })
+        val movementOrders = operations.orders(warrior).filter {
+            it.order !in setOf(Order.EXPLORE, Order.STOP_EXPLORATION, Order.STOP_AUTOMATION)
+        }
+        assertTrue(movementOrders.all { !it.available })
+        assertTrue(movementOrders.all { "No movement remaining" in it.unavailableReasons })
         warrior.currentMovement = 1f
         warrior.health = 50
         assertEquals(0, operations.status(warrior)!!.healingPerTurn)
@@ -118,6 +121,72 @@ class PlayerUnitOrdersTest {
         assertTrue(operations.tryOrder(warrior, Order.FORTIFY_UNTIL_HEALED))
         UnitTurnManager(warrior).endTurn()
         assertEquals(50, warrior.health)
+    }
+
+    @Test
+    fun `exploration can be scheduled without movement and cancelled after save reload`() {
+        warrior.currentMovement = 0f
+        assertTrue(operations.tryOrder(warrior, Order.EXPLORE))
+        assertTrue(warrior.isExploring())
+        assertFalse(operations.status(warrior)!!.idle)
+        assertFalse(operations.tryOrder(warrior, Order.EXPLORE))
+        val restored = json().fromJson(GameInfo::class.java, json().toJson(game.gameInfo))
+        restored.setTransients()
+        val restoredPlayer = restored.getCivilization(player.civID)
+        val explorer = restoredPlayer.units.getCivUnits().single { it.name == "Warrior" }
+        val restoredOrders = PlayerUnitOrders(restoredPlayer)
+        assertEquals(operations.status(warrior), restoredOrders.status(explorer))
+        val origin = explorer.currentTile
+        UnitTurnManager(explorer).startTurn()
+        explorer.doAction()
+        assertNotEquals(origin, explorer.currentTile)
+        explorer.currentMovement = 0f
+        assertTrue(restoredOrders.tryOrder(explorer, Order.STOP_EXPLORATION))
+        assertFalse(explorer.isExploring())
+        assertFalse(restoredOrders.tryOrder(explorer, Order.STOP_EXPLORATION))
+    }
+
+    @Test
+    fun `exploration finishes with a notification and excludes air units`() {
+        for (tile in game.gameInfo.tileMap.values) tile.setExplored(player, true)
+        assertTrue(operations.tryOrder(warrior, Order.EXPLORE))
+        assertFalse(warrior.isExploring())
+        assertTrue(player.notifications.any { it.text.contains("finished exploring") })
+        val city = game.addCity(player, game.getTile(0, 0))
+        val plane = game.addUnit("Fighter", player, city.getCenterTile())
+        assertFalse(operations.tryOrder(plane, Order.EXPLORE))
+    }
+
+    @Test
+    fun `worker automation starts native improvements persists and stops without spending movement`() {
+        val city = game.addCity(player, game.getTile(0, 0))
+        player.tech.addTechnology("Agriculture")
+        city.expansion.takeOwnership(worker.currentTile)
+        worker.currentTile.setTileResource(game.ruleset.tileResources.getValue("Wheat"))
+        player.cache.updateViewableTiles()
+        val before = json().toJson(game.gameInfo)
+        assertTrue(operations.orders(worker).any { it.order == Order.AUTOMATE && it.available })
+        assertEquals(before, json().toJson(game.gameInfo))
+        UnitActions.getUnitActions(worker, UnitActionType.Automate).first().action!!.invoke()
+        assertTrue(operations.status(worker)!!.automated)
+        assertFalse(operations.status(worker)!!.idle)
+        assertEquals("Farm", worker.currentTile.improvementInProgress)
+        assertFalse(operations.tryOrder(worker, Order.AUTOMATE))
+        val restored = json().fromJson(GameInfo::class.java, json().toJson(game.gameInfo))
+        restored.setTransients()
+        val restoredPlayer = restored.getCivilization(player.civID)
+        val restoredWorker = restoredPlayer.units.getCivUnits().single { it.name == "Worker" }
+        assertTrue(PlayerUnitOrders(restoredPlayer).status(restoredWorker)!!.automated)
+        val remaining = restoredWorker.currentTile.turnsToImprovement
+        UnitTurnManager(restoredWorker).endTurn()
+        assertTrue(restoredWorker.currentTile.turnsToImprovement < remaining)
+        restoredWorker.currentMovement = 0f
+        assertTrue(PlayerUnitOrders(restoredPlayer).tryOrder(restoredWorker, Order.STOP_AUTOMATION))
+        assertFalse(restoredWorker.isAutomated())
+        assertEquals(0f, restoredWorker.currentMovement, 0f)
+        assertFalse(PlayerUnitOrders(restoredPlayer).tryOrder(restoredWorker, Order.AUTOMATE))
+        // Stopping automation retains work already done on the tile, as in the UI.
+        assertEquals("Farm", restoredWorker.currentTile.improvementInProgress)
     }
 
     @Test

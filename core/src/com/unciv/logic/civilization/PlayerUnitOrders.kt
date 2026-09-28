@@ -1,5 +1,6 @@
 package com.unciv.logic.civilization
 
+import com.unciv.logic.automation.unit.UnitAutomation
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.models.UnitActionType
 import com.unciv.models.ruleset.unique.UniqueType
@@ -14,7 +15,10 @@ import java.util.Collections
  * and therefore survive saving and loading without a separate order queue.
  */
 class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode: Boolean = false) {
-    enum class Order { FORTIFY, FORTIFY_UNTIL_HEALED, SLEEP, SLEEP_UNTIL_HEALED, SKIP, WAKE }
+    enum class Order {
+        FORTIFY, FORTIFY_UNTIL_HEALED, SLEEP, SLEEP_UNTIL_HEALED, SKIP, WAKE,
+        EXPLORE, STOP_EXPLORATION, AUTOMATE, STOP_AUTOMATION
+    }
 
     data class Status(
         val action: String?,
@@ -23,6 +27,7 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
         val fortificationTurns: Int,
         /** Expected healing at the end of this turn, before subsequent actions or damage. */
         val healingPerTurn: Int,
+        val automated: Boolean,
     )
 
     data class OrderOption(val order: Order, val available: Boolean, val unavailableReasons: List<String>)
@@ -53,7 +58,8 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
         val canHealThisTurn = (!unit.hasUnitMovedThisTurn() && unit.attacksThisTurn == 0) ||
             unit.hasUnique(UniqueType.HealsEvenAfterAction)
         return Status(unit.action, unit.due, unit.isIdle(), unit.getFortificationTurns(),
-            if (canHealThisTurn) unit.getHealAmountForCurrentTile().coerceAtMost(100 - unit.health) else 0)
+            if (canHealThisTurn) unit.getHealAmountForCurrentTile().coerceAtMost(100 - unit.health) else 0,
+            unit.isAutomated())
     }
 
     fun orders(unit: MapUnit): List<OrderOption> {
@@ -68,7 +74,10 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
 
     private fun orderReasons(unit: MapUnit, order: Order): List<String> = buildList {
         if (!PlayerOperations(civ, spectatorMode).canAct()) add("This player cannot act now")
-        if (!unit.hasMovement()) add("No movement remaining")
+        // The desktop permits scheduling exploration and stopping automation
+        // even after movement is exhausted. Starting general automation acts now.
+        if (!unit.hasMovement() && order !in setOf(Order.EXPLORE, Order.STOP_EXPLORATION, Order.STOP_AUTOMATION))
+            add("No movement remaining")
         when (order) {
             Order.FORTIFY, Order.FORTIFY_UNTIL_HEALED -> {
                 if (unit.isFortified()) add("Already fortified; wake the unit before changing its order")
@@ -87,6 +96,13 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
             Order.SKIP -> if (!unit.due) add("Already skipped this turn")
             Order.WAKE -> if (!unit.isFortified() && !unit.isSleeping() && unit.due)
                 add("The unit is already awake and due")
+            Order.EXPLORE -> {
+                if (unit.baseUnit.isAirUnit()) add("Air units cannot explore automatically")
+                if (unit.isExploring()) add("Already exploring")
+            }
+            Order.STOP_EXPLORATION -> if (!unit.isExploring()) add("Not exploring")
+            Order.AUTOMATE -> if (unit.isAutomated()) add("Already automated")
+            Order.STOP_AUTOMATION -> if (!unit.isAutomated()) add("Not automated")
         }
         if (order == Order.FORTIFY_UNTIL_HEALED || order == Order.SLEEP_UNTIL_HEALED) {
             if (unit.health >= 100) add("The unit is already at full health")
@@ -106,6 +122,19 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
                 // Undoing Skip must not cancel an unrelated worker, movement or setup order.
                 if (unit.isFortified() || unit.isSleeping()) unit.action = null
                 unit.due = true
+            }
+            Order.EXPLORE -> {
+                unit.action = UnitActionType.Explore.value
+                if (unit.hasMovement()) UnitAutomation.automatedExplore(unit)
+            }
+            Order.STOP_EXPLORATION -> unit.action = null
+            Order.AUTOMATE -> {
+                unit.automated = true
+                UnitAutomation.automateUnitMoves(unit)
+            }
+            Order.STOP_AUTOMATION -> {
+                unit.action = null
+                unit.automated = false
             }
         }
         true

@@ -273,7 +273,7 @@ object TechnologyDescriptions {
      * nuclear weapons and religion settings, and without those expressly hidden from Civilopedia.
      */
     // Used for Civilopedia, Alert and Picker, so if any of these decide to ignore the "Will not be displayed in Civilopedia" unique this needs refactoring
-    private fun getEnabledBuildings(techName: String, ruleset: Ruleset, civInfo: Civilization?) =
+    fun getEnabledBuildings(techName: String, ruleset: Ruleset, civInfo: Civilization?) =
             getFilteredBuildings(ruleset, civInfo) { it.requiredTechs().contains(techName) }
 
     /**
@@ -325,7 +325,7 @@ object TechnologyDescriptions {
      * nuclear weapons and religion settings, and without those expressly hidden from Civilopedia.
      */
     // Used for Civilopedia, Alert and Picker, so if any of these decide to ignore the "Will not be displayed in Civilopedia"/HiddenFromCivilopedia unique this needs refactoring
-    private fun getEnabledUnits(techName: String, ruleset: Ruleset, civInfo: Civilization?): Sequence<BaseUnit> {
+    fun getEnabledUnits(techName: String, ruleset: Ruleset, civInfo: Civilization?): Sequence<BaseUnit> {
         return ruleset.units.values.asSequence()
             .filter {
                 it.requiredTechs().contains(techName)
@@ -350,13 +350,13 @@ object TechnologyDescriptions {
             modifiers.any { it.isTechConditional() && it.params[0] == techName }
 
     /** Used by [getAffectedImprovements] only */
-    private data class ImprovementAndUnique(val improvement: TileImprovement, val unique: Unique) {
+    data class ImprovementAndUnique(val improvement: TileImprovement, val unique: Unique) {
         fun getText() = "[${unique.params[0]}] from every [${improvement.name}]" +
                 (if (unique.type == UniqueType.Stats) "" else " on [${unique.params[1]}] tiles")
     }
 
     /** Yields Improvements with bonus Stats enabled by [techName] including the Unique doing it */
-    private fun getAffectedImprovements(techName: String, ruleset: Ruleset): Sequence<ImprovementAndUnique> =
+    fun getAffectedImprovements(techName: String, ruleset: Ruleset): Sequence<ImprovementAndUnique> =
             ruleset.tileImprovements.values.asSequence()
                 .flatMap { improvement ->
                     improvement.uniqueObjects.asSequence()

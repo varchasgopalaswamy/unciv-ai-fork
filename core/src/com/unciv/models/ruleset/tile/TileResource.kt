@@ -17,6 +17,19 @@ import yairm210.purity.annotations.Readonly
 class TileResource : RulesetStatsObject(), GameResource {
 
     var resourceType: ResourceType = ResourceType.Bonus
+
+    /** A city connects its underlying resource once extraction is technologically possible. */
+    @Readonly
+    fun canConnectUnderCity(civInfo: Civilization): Boolean {
+        if (!civInfo.canSeeResource(this)) return false
+        val improvements = getImprovements()
+        if (improvements.isEmpty()) return true
+        return improvements.any { name ->
+            civInfo.gameInfo.ruleset.tileImprovements[name]?.let {
+                it.turnsToBuild != -1 && (it.techRequired == null || civInfo.tech.isResearched(it.techRequired!!))
+            } == true
+        }
+    }
     var terrainsCanBeFoundOn: List<String> = listOf()
 
     /** Stats that this resource adds to a tile when a correct improvement has been constructed

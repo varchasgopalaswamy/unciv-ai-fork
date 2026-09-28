@@ -116,10 +116,10 @@ class CityStats(val city: City) {
     }
 
     @Readonly
-    private fun getStatsFromProduction(production: Float): Stats? {
-        if (Stat.isStat(city.cityConstructions.currentConstructionName())) {
+    private fun getStatsFromProduction(production: Float, currentConstruction: IConstruction): Stats? {
+        if (Stat.isStat(currentConstruction.name)) {
             val stats = Stats()
-            val stat = Stat.valueOf(city.cityConstructions.currentConstructionName())
+            val stat = Stat.valueOf(currentConstruction.name)
             stats[stat] = production * getStatConversionRate(stat)
             return stats
         }
@@ -522,7 +522,7 @@ class CityStats(val city: City) {
             entry.production *= statPercentBonusesSum.production.toPercent()
 
         // We only add the 'extra stats from production' AFTER we calculate the production INCLUDING BONUSES
-        val statsFromProduction = getStatsFromProduction(newFinalStatList.values.map { it.production }.sum())
+        val statsFromProduction = getStatsFromProduction(newFinalStatList.values.map { it.production }.sum(), currentConstruction)
         if (statsFromProduction != null && !statsFromProduction.isEmpty()) {
             baseStatTree = StatTreeNode().apply {
                 children.putAll(baseStatTree.children)

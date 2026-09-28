@@ -2,7 +2,6 @@ package com.unciv.ui.screens.worldscreen.unit.actions
 
 import com.unciv.GUI
 import com.unciv.UncivGame
-import com.unciv.logic.automation.unit.UnitAutomation
 import com.unciv.logic.civilization.PlayerUnitEconomyOperations
 import com.unciv.logic.civilization.PlayerUnitOrders
 import com.unciv.logic.civilization.PlayerUnitOrders.Order
@@ -143,11 +142,12 @@ object UnitActions {
                 else unit.action = null
             })
         if (unit.isExploring())
-            yield(UnitAction(UnitActionType.StopExploration, 20f) { unit.action = null })
+            yield(UnitAction(UnitActionType.StopExploration, 20f) {
+                PlayerUnitOrders(unit.civ).tryOrder(unit, Order.STOP_EXPLORATION); Unit
+            })
         if (unit.isAutomated())
             yield(UnitAction(UnitActionType.StopAutomation, 10f) {
-                unit.action = null
-                unit.automated = false
+                PlayerUnitOrders(unit.civ).tryOrder(unit, Order.STOP_AUTOMATION); Unit
             })
 
         addPromoteActions(unit)
@@ -276,10 +276,10 @@ object UnitActions {
     private suspend fun SequenceScope<UnitAction>.addExplorationActions(unit: MapUnit) {
         if (unit.baseUnit.isAirUnit()) return
         if (unit.isExploring()) return
-        yield(UnitAction(UnitActionType.Explore, 5f) {
-            unit.action = UnitActionType.Explore.value
-            if (unit.hasMovement()) UnitAutomation.automatedExplore(unit)
-        })
+        val orders = PlayerUnitOrders(unit.civ)
+        yield(UnitAction(UnitActionType.Explore, 5f,
+            action = { orders.tryOrder(unit, Order.EXPLORE); Unit }
+                .takeIf { orders.canOrder(unit, Order.EXPLORE) }))
     }
 
     private suspend fun SequenceScope<UnitAction>.addFortifyActions(unit: MapUnit) {
@@ -364,13 +364,13 @@ object UnitActions {
 
     private suspend fun SequenceScope<UnitAction>.addAutomateActions(unit: MapUnit) {
         if (unit.isAutomated()) return
+        val orders = PlayerUnitOrders(unit.civ)
         yield(UnitAction(UnitActionType.Automate,
             isCurrentAction = unit.isAutomated(),
             useFrequency = 25f,
             action = {
-                unit.automated = true
-                UnitAutomation.automateUnitMoves(unit)
-            }.takeIf { unit.hasMovement() }
+                orders.tryOrder(unit, Order.AUTOMATE); Unit
+            }.takeIf { orders.canOrder(unit, Order.AUTOMATE) }
         ))
     }
 

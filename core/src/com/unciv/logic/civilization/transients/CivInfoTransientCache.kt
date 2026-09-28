@@ -26,6 +26,16 @@ import com.unciv.logic.automation.Timers.Companion.timeThis
 /** CivInfo class was getting too crowded */
 class CivInfoTransientCache(val civInfo: Civilization) {
 
+    /**
+     * Optional, synchronous observer of completed visibility updates, including intermediate
+     * movement steps. Tiles are explored and last-seen improvements are updated before this
+     * runs. Copy any needed tile facts during the callback: the tiles remain mutable.
+     * Observers must not mutate the game or trigger another visibility update.
+     * This observer is transient and is not copied to cloned games.
+     */
+    @Transient
+    var onViewableTilesUpdated: ((Set<Tile>) -> Unit)? = null
+
     @Transient
     var lastEraResourceUsedForBuilding = java.util.HashMap<String, Int>()
 
@@ -149,6 +159,8 @@ class CivInfoTransientCache(val civInfo: Civilization) {
 
             discoverNaturalWonders()
         }
+
+        onViewableTilesUpdated?.invoke(civInfo.viewableTiles)
     }
 
     private fun updateViewableInvisibleTiles() {

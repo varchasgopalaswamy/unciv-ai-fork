@@ -31,7 +31,7 @@ class CityPopulationManager : IsPartOfGameInfoSerialization {
 
 
     //region pure functions
-    fun clone(): CityPopulationManager {
+    fun clone(population: Int = this.population): CityPopulationManager {
         val toReturn = CityPopulationManager()
         toReturn.specialistAllocations.add(specialistAllocations)
         toReturn.population = population

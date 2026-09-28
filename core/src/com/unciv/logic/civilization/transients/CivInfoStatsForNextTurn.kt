@@ -9,6 +9,7 @@ import com.unciv.logic.map.tile.RoadStatus
 import com.unciv.models.ruleset.Policy
 import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.tile.TileImprovement
+import com.unciv.models.ruleset.tile.TileResource
 import com.unciv.models.ruleset.unique.GameContext
 import com.unciv.models.ruleset.unique.UniqueTarget
 import com.unciv.models.ruleset.unique.UniqueType
@@ -17,6 +18,7 @@ import com.unciv.models.stats.StatMap
 import com.unciv.models.stats.Stats
 import com.unciv.ui.components.extensions.toPercent
 import yairm210.purity.annotations.Readonly
+import yairm210.purity.annotations.LocalState
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -229,22 +231,26 @@ class CivInfoStatsForNextTurn(val civInfo: Civilization) {
 
 
     @Readonly
-    fun getHappinessBreakdown(): HashMap<String, Float> {
-        val statMap = HashMap<String, Float>()
+    private fun ownedLuxuries() = civInfo.getCivResourceSupply().map { it.resource }
+        .filter { it.resourceType == ResourceType.Luxury }
 
-        statMap["Base happiness"] = civInfo.getDifficulty().baseHappiness.toFloat()
+    /** Marginal happiness from obtaining one additional copy, under current modifiers. */
+    @Readonly
+    fun getAdditionalLuxuryHappiness(resource: TileResource): Float {
+        val owned = ownedLuxuries()
+        if (resource.resourceType != ResourceType.Luxury || resource in owned) return 0f
+        return luxuryHappiness(owned + listOf(resource)).values.sum() - luxuryHappiness(owned).values.sum()
+    }
+
+    @Readonly
+    private fun luxuryHappiness(ownedLuxuries: List<TileResource>): HashMap<String, Float> {
+        val statMap = HashMap<String, Float>()
 
         var happinessPerUniqueLuxury = 4f + civInfo.getDifficulty().extraHappinessPerLuxury
         for (unique in civInfo.getMatchingUniques(UniqueType.BonusHappinessFromLuxury))
             happinessPerUniqueLuxury += unique.params[0].toInt()
 
-        val ownedLuxuries = civInfo.getCivResourceSupply().map { it.resource }
-            .filter { it.resourceType == ResourceType.Luxury }
-
-        val relevantLuxuries = civInfo.getCivResourceSupply().asSequence()
-            .map { it.resource }
-            .count { it.resourceType == ResourceType.Luxury
-                    && it.getMatchingUniques(UniqueType.ObsoleteWith)
+        val relevantLuxuries = ownedLuxuries.count { it.getMatchingUniques(UniqueType.ObsoleteWith)
                 .none { unique -> civInfo.tech.isResearched(unique.params[0]) } }
         statMap["Luxury resources"] = relevantLuxuries * happinessPerUniqueLuxury
 
@@ -272,6 +278,14 @@ class CivInfoStatsForNextTurn(val civInfo: Civilization) {
             luxuriesAllOfWhichAreTradedAway.size * happinessPerUniqueLuxury *
                     civInfo.getMatchingUniques(UniqueType.RetainHappinessFromLuxury)
                         .sumOf { it.params[0].toInt() } / 100f
+
+        return statMap
+    }
+
+    @Readonly
+    fun getHappinessBreakdown(): HashMap<String, Float> {
+        @LocalState val statMap = luxuryHappiness(ownedLuxuries())
+        statMap["Base happiness"] = civInfo.getDifficulty().baseHappiness.toFloat()
 
         for (city in civInfo.cities) {
             // There appears to be a concurrency problem? In concurrent thread in ConstructionsTable.getConstructionButtonDTOs
