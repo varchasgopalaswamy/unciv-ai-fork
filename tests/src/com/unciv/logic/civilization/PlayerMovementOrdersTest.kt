@@ -2,6 +2,7 @@ package com.unciv.logic.civilization
 
 import com.unciv.UncivGame
 import com.unciv.json.json
+import com.unciv.logic.GameInfo
 import com.unciv.logic.map.mapunit.UnitTurnManager
 import com.unciv.models.UnitActionType
 import com.unciv.testing.BaseTestRunner
@@ -62,6 +63,83 @@ class PlayerMovementOrdersTest {
         }
         assertSame(destination, unit.currentTile)
         assertFalse(unit.isMoving())
+    }
+
+    @Test
+    fun `formation route refreshes both movement budgets on later turns and survives reload`() {
+        val civilian = game.addUnit("Settler", player, unit.currentTile)
+        civilian.startEscorting()
+        unit.currentMovement = 1f
+        val before = json().toJson(game.gameInfo)
+        val route = operations.route(civilian, destination)!!
+        assertEquals(listOf(1, 3, 5, 7), route.turns.map { it.destination.position.x })
+        assertEquals(before, json().toJson(game.gameInfo))
+        // A new formation destination replaces both members' independent travel orders.
+        unit.action = "moveTo -7,0"
+        unit.automated = true
+        assertTrue(operations.trySetDestination(civilian, destination))
+        assertSame(game.getTile(1, 0), unit.currentTile)
+        assertSame(unit.currentTile, civilian.currentTile)
+        assertEquals(1f, civilian.currentMovement, 0f)
+        assertEquals(0f, unit.currentMovement, 0f)
+        assertNull(unit.action)
+        assertFalse(unit.automated)
+        assertSame(destination, operations.movementDestination(unit))
+        // Spending the faster member's spare point must not cancel the future destination.
+        civilian.doAction()
+        assertTrue(civilian.isMoving())
+        val restored = json().fromJson(GameInfo::class.java, json().toJson(game.gameInfo))
+        restored.setTransients()
+        val restoredPlayer = restored.getCivilization(player.civID)
+        val moving = restoredPlayer.units.getCivUnits().single { it.isMoving() }
+        val escort = moving.getOtherEscortUnit()!!
+        assertTrue(moving.isEscorting() && escort.isEscorting())
+        repeat(3) {
+            UnitTurnManager(moving).startTurn()
+            UnitTurnManager(escort).startTurn()
+            moving.doAction()
+            assertSame(moving.currentTile, escort.currentTile)
+        }
+        assertEquals(destination.position, moving.currentTile.position)
+        assertFalse(moving.isMoving())
+    }
+
+    @Test
+    fun `either member can cancel the formation destination without unlinking`() {
+        val civilian = game.addUnit("Settler", player, unit.currentTile)
+        civilian.startEscorting()
+        assertTrue(operations.trySetDestination(civilian, destination))
+        assertTrue(operations.canCancelMovement(unit))
+        assertTrue(operations.tryCancelMovement(unit))
+        assertNull(operations.movementDestination(civilian))
+        assertNull(operations.movementDestination(unit))
+        assertTrue(civilian.isEscorting() && unit.isEscorting())
+    }
+
+    @Test
+    fun `formation preview reports separate terrain costs and movement stops when escort is exhausted`() {
+        unit.destroy()
+        val scout = game.addUnit("Scout", player, game.getTile(0, 0))
+        scout.promotions.addPromotion("Ignore terrain cost", isFree = true)
+        val civilian = game.addUnit("Settler", player, scout.currentTile)
+        scout.startEscorting()
+        val hill = game.getTile(1, 0)
+        hill.setTerrainFeatures(listOf("Hill"))
+        val preview = operations.moves(scout).single { it.destination === hill }
+        assertEquals(1f, preview.movementCost, 0f)
+        assertEquals(2f, preview.escortMovementCost!!, 0f)
+        val beyond = game.getTile(2, 0)
+        // The initial plan guesses that unexplored tiles cost one movement point.
+        for (tile in game.tileMap.values) if (tile !== scout.currentTile) tile.setExplored(player, false)
+        player.viewableTiles = setOf(scout.currentTile)
+        val planned = operations.moves(scout).single { it.destination === beyond }
+        assertEquals(listOf(hill, beyond), planned.path)
+        assertTrue(operations.tryMove(scout, beyond))
+        assertSame(hill, scout.currentTile)
+        assertSame(hill, civilian.currentTile)
+        assertEquals(1f, scout.currentMovement, 0f)
+        assertEquals(0f, civilian.currentMovement, 0f)
+        assertTrue(scout.isEscorting() && civilian.isEscorting())
     }
 
     @Test

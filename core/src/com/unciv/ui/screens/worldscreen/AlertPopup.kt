@@ -285,6 +285,7 @@ class AlertPopup(
         decision.paragraphs.forEach { addGoodSizedLabel(it).row() }
         bottomTable.defaults().pad(0f, 30f)
         for (option in decision.options) {
+            option.paragraphs.forEach { addGoodSizedLabel(it).row() }
             val binding = if (option.choice == CaptureChoice.ReturnCivilian) KeyboardBinding.Confirm else KeyboardBinding.Cancel
             addButton(option.label, binding) {
                 if (operations.tryResolve(popupAlert, option.choice)) close()

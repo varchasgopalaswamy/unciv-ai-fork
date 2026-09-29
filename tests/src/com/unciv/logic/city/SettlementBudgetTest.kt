@@ -10,6 +10,24 @@ import org.junit.runner.RunWith
 
 @RunWith(BaseTestRunner::class)
 class SettlementBudgetTest {
+    @Test fun `supplied planning terrain controls site requirements without inspecting live terrain`() {
+        val game = TestGame().apply { makeHexagonalMap(7, "Grassland") }
+        val civ = game.addCiv(game.ruleset.nations.getValue("Rome"), isPlayer = true)
+        game.addCity(civ, game.getTile(0, 0))
+        val remembered = TestGame().apply { makeHexagonalMap(7, "Plains") }
+        val site = HexCoord(0, 5)
+        remembered.getTile(site).setBaseTerrain(remembered.ruleset.terrains.getValue("Plains"))
+        val budget = SettlementBudget(civ, remembered.tileMap)
+        val before = budget.buildings(site, 1)
+        val stoneWorks = before.single { it.building.name == "Stone Works" }
+        assertTrue(stoneWorks.requirements.any { it.contains("Plains") })
+        game.getTile(site).setBaseTerrain(game.ruleset.terrains.getValue("Desert"))
+        val saved = json().toJson(game.gameInfo)
+        assertEquals(before, budget.buildings(site, 1))
+        assertEquals(saved, json().toJson(game.gameInfo))
+        assertEquals(SettlementBudget(civ).costs(site, listOf(1, 2, 5)), budget.costs(site, listOf(1, 2, 5)))
+    }
+
     @Test fun `costs match founding and growth without mutating the game`() {
         for (nation in listOf("Rome", "India")) {
             val game = TestGame()

@@ -222,6 +222,8 @@ class PlayerCaptureOperationsTest {
         assertEquals(worker.id, decision.unitId)
         assertTrue(decision.title.contains(enemy.civName))
         assertTrue(decision.paragraphs.single().contains("originally belonged"))
+        assertEquals(CivilianCaptureOutcome(enemy.civName, "Worker"), decision.options.single { it.choice == CaptureChoice.ReturnCivilian }.civilianOutcome)
+        assertEquals(CivilianCaptureOutcome(player.civName, "Worker"), decision.options.single { it.choice == CaptureChoice.KeepCivilian }.civilianOutcome)
         assertTrue(operations.tryResolve(alert, CaptureChoice.ReturnCivilian))
         assertTrue(worker.isDestroyed)
         assertEquals(1, enemy.units.getCivUnits().count { it.name == "Worker" })
@@ -237,6 +239,13 @@ class PlayerCaptureOperationsTest {
         settler.capturedBy(barbarian)
         BattleUnitCapture.captureCivilianUnit(MapUnitCombatant(warrior), MapUnitCombatant(settler))
         val alert = player.popupAlerts.single { it.type == AlertType.RecapturedCivilian }
+        val before = json().toJson(game)
+        val options = operations.captureDecision(alert)!!.options.associateBy { it.choice }
+        assertEquals(CivilianCaptureOutcome(enemy.civName, "Settler"), options.getValue(CaptureChoice.ReturnCivilian).civilianOutcome)
+        val keep = options.getValue(CaptureChoice.KeepCivilian)
+        assertEquals(CivilianCaptureOutcome(player.civName, "Worker"), keep.civilianOutcome)
+        assertEquals(listOf("The captured [Settler] becomes a [Worker]."), keep.paragraphs)
+        assertEquals(before, json().toJson(game))
         assertTrue(operations.tryResolve(alert, CaptureChoice.KeepCivilian))
         assertTrue(settler.isDestroyed)
         assertTrue(player.units.getCivUnits().any { it.name == "Worker" })
@@ -245,6 +254,22 @@ class PlayerCaptureOperationsTest {
         assertNull(operations.captureDecision(stale))
         assertFalse(operations.tryResolve(stale, CaptureChoice.KeepCivilian))
         assertTrue(player.popupAlerts.contains(stale))
+    }
+
+    @Test
+    fun `returning a rescued settler preserves its type for the original owner`() {
+        val barbarian = testGame.addBarbarianCiv().apply { victoryManager.civInfo = this }
+        val warrior = testGame.addUnit("Warrior", player, testGame.getTile(0, -2))
+        val settler = testGame.addUnit("Settler", enemy, testGame.getTile(1, -2)).apply { originalOwner = enemy.civID }
+        settler.capturedBy(barbarian)
+        BattleUnitCapture.captureCivilianUnit(MapUnitCombatant(warrior), MapUnitCombatant(settler))
+        val alert = player.popupAlerts.single { it.type == AlertType.RecapturedCivilian }
+        val option = operations.captureDecision(alert)!!.options.single { it.choice == CaptureChoice.ReturnCivilian }
+        assertEquals(CivilianCaptureOutcome(enemy.civName, "Settler"), option.civilianOutcome)
+        assertTrue(operations.tryResolve(alert, CaptureChoice.ReturnCivilian))
+        assertTrue(settler.isDestroyed)
+        assertEquals(1, enemy.units.getCivUnits().count { it.name == "Settler" })
+        assertFalse(player.units.getCivUnits().any { it.isCivilian() })
     }
 
     @Test

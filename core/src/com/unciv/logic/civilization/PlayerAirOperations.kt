@@ -6,6 +6,7 @@ import com.unciv.logic.battle.CityCombatant
 import com.unciv.logic.battle.ICombatant
 import com.unciv.logic.battle.MapUnitCombatant
 import com.unciv.logic.battle.Nuke
+import com.unciv.logic.map.HexCoord
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.UnitActionType
@@ -21,6 +22,8 @@ class PlayerAirOperations(private val civ: Civilization, private val spectatorMo
     data class Result(val mission: Mission, val resolution: AttackResolution?)
 
     data class Option(val mission: Mission, val range: Int, val available: Boolean, val reasons: List<String>)
+    /** Observable capability, not private readiness or the chosen interceptor. */
+    data class InterceptionThreat(val name: String, val civilization: String, val position: HexCoord, val range: Int)
     data class Preview(
         val mission: Mission,
         val destination: Tile,
@@ -31,7 +34,9 @@ class PlayerAirOperations(private val civ: Civilization, private val spectatorMo
         val affectedTiles: List<Tile>,
         val visibleVictims: List<ICombatant>,
         val knownDeclarations: List<Civilization>,
-        val speculative: Boolean,
+        val visibleInterceptionThreats: List<InterceptionThreat>,
+        val unexploredAffectedTiles: Int,
+        val affectedTilesOutsideCurrentSight: Int,
     )
 
     @Readonly
@@ -62,7 +67,7 @@ class PlayerAirOperations(private val civ: Civilization, private val spectatorMo
     }
 
     @Readonly @Suppress("purity")
-    fun preview(unit: MapUnit, mission: Mission, destination: Tile): Preview? {
+    fun preview(unit: MapUnit, mission: Mission, destination: Tile, knownTileOwners: Map<HexCoord, String> = emptyMap()): Preview? {
         if (destination.tileMap !== civ.gameInfo.tileMap) return null
         val option = options(unit).firstOrNull { it.mission == mission } ?: return null
         val reasons = option.reasons.toMutableList()
@@ -76,23 +81,35 @@ class PlayerAirOperations(private val civ: Civilization, private val spectatorMo
                 if (destination === unit.currentTile || !unit.movement.canParadropOn(destination) ||
                     !unit.movement.canMoveTo(destination, forPlanning = true)) addDestinationReason(reasons)
             }
-            Mission.AIR_SWEEP -> Unit // Interceptors are unknown until the mission resolves.
+            Mission.AIR_SWEEP -> Unit // The responding interceptor is selected at execution.
             Mission.NUCLEAR_STRIKE -> {
                 if (!Nuke.mayUseNuke(MapUnitCombatant(unit), destination, forPlanning = true)) addDestinationReason(reasons)
             }
         }
         val radius = if (mission == Mission.NUCLEAR_STRIKE) unit.getNukeBlastRadius() else 0
-        val affected = if (mission == Mission.NUCLEAR_STRIKE)
-            destination.getTilesInDistance(radius).filter { it.isExplored(civ) }.toList() else emptyList()
+        val blast = if (mission == Mission.NUCLEAR_STRIKE) destination.getTilesInDistance(radius).toList() else emptyList()
+        val affected = blast.filter { it.isExplored(civ) }
         val victims = affected.flatMap { tile ->
             listOfNotNull(tile.getCity()?.takeIf { tile.isCityCenter() && tile.isVisible(civ) }?.let(::CityCombatant)) +
                 tile.getUnits().filter { it.civ === civ || it.isVisibleTo(civ) }.map(::MapUnitCombatant).toList()
         }
-        val declarations = (affected.mapNotNull { it.getOwner() } + victims.map { it.getCivInfo() })
+        // Remembered ownership supplies a warning, never an execution predicate.
+        // Hidden ownership changes must not update that warning.
+        val knownOwners = affected.mapNotNull { tile ->
+            if (tile.isVisible(civ)) tile.getOwner()
+            else knownTileOwners[tile.position]?.let { civ.gameInfo.getCivilizationOrNull(it) }
+        }
+        val declarations = (knownOwners + victims.map { it.getCivInfo() })
             .filter { it !== civ && civ.knows(it) && !it.isBarbarian && !civ.isAtWarWith(it) }.distinct()
+        val interceptionRelevant = mission == Mission.AIR_SWEEP ||
+            mission == Mission.NUCLEAR_STRIKE && !unit.hasUnique(UniqueType.CannotBeIntercepted)
+        val threats = if (!interceptionRelevant) emptyList() else civ.gameInfo.civilizations.asSequence()
+            .filter { civ.isAtWarWith(it) || it in declarations }.flatMap { it.units.getCivUnits() }
+            .filter { it.isVisibleTo(civ) && it.interceptChance() > 0 && it.currentTile.aerialDistanceTo(destination) <= it.getInterceptionRange() }
+            .map { InterceptionThreat(it.name, it.civ.civName, it.currentTile.position, it.getInterceptionRange()) }
+            .sortedWith(compareBy({ it.civilization }, { it.position.x }, { it.position.y }, { it.name })).toList()
         return Preview(mission, destination, option.range, reasons.isEmpty(), reasons.distinct(), radius,
-            affected, victims, declarations,
-            mission == Mission.NUCLEAR_STRIKE || mission == Mission.AIR_SWEEP || !destination.isVisible(civ))
+            affected, victims, declarations, threats, blast.count { !it.isExplored(civ) }, blast.count { !it.isVisible(civ) })
     }
 
     @Readonly @Suppress("purity")

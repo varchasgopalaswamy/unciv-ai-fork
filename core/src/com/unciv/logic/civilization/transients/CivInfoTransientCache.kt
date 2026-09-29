@@ -36,6 +36,15 @@ class CivInfoTransientCache(val civInfo: Civilization) {
     @Transient
     var onViewableTilesUpdated: ((Set<Tile>) -> Unit)? = null
 
+    /**
+     * Synchronous notification of an explicit map reveal outside current sight,
+     * including a repeated reveal of an already explored tile. Copy permanent
+     * tile facts now; this does not reveal units or grant ongoing visibility.
+     * Observers must not mutate the game. Not retained by saves or clones.
+     */
+    @Transient
+    var onTileRevealed: ((Tile) -> Unit)? = null
+
     @Transient
     var lastEraResourceUsedForBuilding = java.util.HashMap<String, Int>()
 

@@ -2,6 +2,7 @@ package com.unciv.logic.city
 
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.map.HexCoord
+import com.unciv.logic.map.TileMap
 import com.unciv.models.ruleset.Building
 import com.unciv.models.stats.Stats
 
@@ -12,7 +13,7 @@ import com.unciv.models.stats.Stats
  * prediction of total empire happiness after founding. Buildings are independent
  * possibilities; their requirements still apply and no production rate is assumed.
  */
-class SettlementBudget(private val civ: Civilization) {
+class SettlementBudget(private val civ: Civilization, private val map: TileMap = civ.gameInfo.tileMap) {
     data class Cost(val population: Int, val cityUnhappiness: Float, val populationUnhappiness: Float)
     data class BuildingOption(val building: Building, val happiness: Float, val productionCost: Int,
                               val requirements: List<String>, val missingTechnologies: List<String>)
@@ -25,7 +26,7 @@ class SettlementBudget(private val civ: Civilization) {
         it.foundingCivObject = civ
         it.population = it.population.clone(population)
         // Empty owned/worked tile sets make transient setup read-only to the map.
-        it.setTransients(civ)
+        it.setTransients(civ, map)
     }
 
     fun costs(position: HexCoord, populations: List<Int>): List<Cost> = populations.map { population ->

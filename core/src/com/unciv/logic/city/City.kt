@@ -402,10 +402,10 @@ class City : IsPartOfGameInfoSerialization, INamed {
         lockedTiles.clear()
     }
 
-    fun setTransients(civInfo: Civilization) {
+    fun setTransients(civInfo: Civilization, map: TileMap = civInfo.gameInfo.tileMap) {
         this.civ = civInfo
         this.id = if (id != NO_ID) id else pseudoRandomId(civ)
-        tileMap = civInfo.gameInfo.tileMap
+        tileMap = map
         centerTile = tileMap[location]
         state = GameContext(this)
         tilesInRange = getCenterTile().getTilesInDistance(getWorkRange()).toHashSet()

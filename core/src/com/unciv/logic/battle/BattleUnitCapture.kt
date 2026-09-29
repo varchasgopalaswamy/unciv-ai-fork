@@ -12,6 +12,7 @@ import com.unciv.logic.map.tile.Tile
 import com.unciv.logic.notifications.AttackNotifications
 import com.unciv.models.ruleset.unique.GameContext
 import com.unciv.models.ruleset.unique.UniqueType
+import com.unciv.models.ruleset.unit.BaseUnit
 import yairm210.purity.annotations.Readonly
 import kotlin.math.min
 import kotlin.random.Random
@@ -224,12 +225,23 @@ object BattleUnitCapture {
         capturedUnit.civ = capturingCiv
         capturedUnit.cache.state = GameContext(capturedUnit)
 
-        val workerTypeUnit = capturingCiv.gameInfo.ruleset.units.values
-            .firstOrNull { it.isCivilian() && it.getMatchingUniques(UniqueType.BuildImprovements, GameContext.IgnoreConditionals)
-            .any { unique -> unique.params[0] == "Land" } }
-            ?: return null
+        val workerTypeUnit = keptCivilianUnitType(capturedUnit, capturingCiv) ?: return null
         return capturingCiv.units.placeUnitNearTile(capturedUnit.currentTile.position, workerTypeUnit, capturedUnit.id)
             ?.currentTile?.position
+    }
+
+    /**
+     * Unit type retained by [captureOrConvertToWorker], without changing ownership or placing a unit.
+     * Original-owner recovery and destruction of uncapturable units are handled before that operation.
+     */
+    @Readonly
+    fun keptCivilianUnitType(capturedUnit: MapUnit, capturingCiv: Civilization): BaseUnit? {
+        if (!capturedUnit.hasUnique(UniqueType.FoundCity, GameContext.IgnoreConditionals) || capturingCiv.isBarbarian)
+            return capturedUnit.baseUnit
+        return capturingCiv.gameInfo.ruleset.units.values.firstOrNull {
+            it.isCivilian() && it.getMatchingUniques(UniqueType.BuildImprovements, GameContext.IgnoreConditionals)
+                .any { unique -> unique.params[0] == "Land" }
+        }
     }
 
 }

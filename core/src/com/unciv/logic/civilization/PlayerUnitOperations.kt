@@ -2,13 +2,15 @@ package com.unciv.logic.civilization
 
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.mapunit.UnitSettlement
+import com.unciv.logic.map.mapunit.movement.MovementCost
 import com.unciv.logic.map.tile.Tile
+import com.unciv.logic.civilization.Notification.NotificationCategory
 import yairm210.purity.annotations.Readonly
 import java.util.Collections
 
 /** Ordinary movement, persistent destinations and settlement. Special relocation modes use their own operations. */
 class PlayerUnitOperations(private val civ: Civilization, private val spectatorMode: Boolean = false) {
-    data class MovePreview(val destination: Tile, val path: List<Tile>, val movementCost: Float)
+    data class MovePreview(val destination: Tile, val path: List<Tile>, val movementCost: Float, val escortMovementCost: Float? = null)
     /** Turn stops and costs are estimates: discoveries, embarkation and other units can change them. */
     data class RoutePreview(val destination: Tile, val turns: List<MovePreview>)
 
@@ -27,13 +29,13 @@ class PlayerUnitOperations(private val civ: Civilization, private val spectatorM
         val paths = unit.movement.getMovementToTilesAtPosition(unit.currentTile.position, unit.currentMovement, forPlanning = true)
         return paths.entries.filter { (tile, _) ->
             tile !== unit.currentTile && unit.movement.canMoveTo(tile, forPlanning = true)
-        }.map { (tile, entry) -> MovePreview(tile, paths.getPathToTile(tile), entry.totalMovement) }
+        }.map { (tile, entry) -> movePreview(unit, unit.currentTile, tile, paths.getPathToTile(tile), entry.totalMovement) }
     }
 
     fun tryMove(unit: MapUnit, destination: Tile): Boolean = synchronized(civ.gameInfo) {
         if (!PlayerOperations(civ, spectatorMode).canAct()) return@synchronized false
         val preview = moves(unit).firstOrNull { it.destination === destination } ?: return@synchronized false
-        unit.action = null
+        clearMovementActions(unit)
         unit.movement.moveToTile(destination, plannedPath = preview.path)
         // An obstacle discovered while moving can stop a valid order short of its destination.
         true
@@ -52,14 +54,43 @@ class PlayerUnitOperations(private val civ: Civilization, private val spectatorM
         for ((index, stop) in stops.withIndex()) {
             val paths = unit.movement.getMovementToTilesAtPosition(origin.position,
                 if (index == 0) unit.currentMovement else unit.getMaxMovement().toFloat(),
-                considerZoneOfControl = index == 0, forPlanning = true)
+                considerZoneOfControl = index == 0, forPlanning = true, useMaximumMovementForEscort = index > 0)
             val entry = paths[stop] ?: return null
             val path = paths.getPathToTile(stop)
             if (path.isEmpty()) return null
-            turns.add(MovePreview(stop, Collections.unmodifiableList(path), entry.totalMovement))
+            turns.add(movePreview(unit, origin, stop, Collections.unmodifiableList(path), entry.totalMovement, index > 0))
             origin = stop
         }
         return RoutePreview(destination, Collections.unmodifiableList(turns))
+    }
+
+    /** Formation paths share stops; the two units still pay their own terrain costs. */
+    private fun movePreview(unit: MapUnit, origin: Tile, destination: Tile, path: List<Tile>, cost: Float, laterTurn: Boolean = false): MovePreview {
+        val escort = unit.getOtherEscortUnit()?.takeIf { unit.isEscorting() }
+            ?: return MovePreview(destination, path, cost)
+        fun unitCost(subject: MapUnit): Float {
+            var previous = origin
+            var total = 0f
+            for (tile in path) {
+                total += MovementCost.getMovementCostBetweenAdjacentTiles(
+                    subject, previous, tile, considerZoneOfControl = !laterTurn, forPlanning = true,
+                )
+                previous = tile
+            }
+            return total.coerceAtMost(if (laterTurn) subject.getMaxMovement().toFloat() else subject.currentMovement)
+        }
+        return MovePreview(destination, path, unitCost(unit), unitCost(escort))
+    }
+
+    /** A direct movement instruction replaces independent travel/automation for the moving formation. */
+    private fun clearMovementActions(unit: MapUnit) {
+        val escort = unit.getOtherEscortUnit()?.takeIf { unit.isEscorting() }
+        unit.action = null
+        unit.automated = false
+        if (escort != null) {
+            escort.action = null
+            escort.automated = false
+        }
     }
 
     /** Begins moving immediately; the ordinary serialized moveTo action retains the destination. */
@@ -67,7 +98,7 @@ class PlayerUnitOperations(private val civ: Civilization, private val spectatorM
         if (!PlayerOperations(civ, spectatorMode).canAct()) return@synchronized false
         val preview = route(unit, destination) ?: return@synchronized false
         val origin = unit.currentTile
-        unit.action = null
+        clearMovementActions(unit)
         val first = preview.turns.first()
         unit.movement.moveToTile(first.destination, plannedPath = first.path)
         if (!unit.isDestroyed && unit.currentTile !== origin && unit.currentTile !== destination)
@@ -76,21 +107,31 @@ class PlayerUnitOperations(private val civ: Civilization, private val spectatorM
     }
 
     @Readonly
+    fun movementDestination(unit: MapUnit): Tile? {
+        if (!owns(unit)) return null
+        if (unit.isMoving()) return unit.getMovementDestination()
+        val escort = unit.getOtherEscortUnit()?.takeIf { unit.isEscorting() && owns(it) }
+        return escort?.takeIf { it.isMoving() }?.getMovementDestination()
+    }
+
+    @Readonly
     fun canCancelMovement(unit: MapUnit): Boolean =
-        PlayerOperations(civ, spectatorMode).canAct() && owns(unit) && unit.isMoving()
+        PlayerOperations(civ, spectatorMode).canAct() && movementDestination(unit) != null
 
     fun tryCancelMovement(unit: MapUnit): Boolean = synchronized(civ.gameInfo) {
         if (!canCancelMovement(unit)) return@synchronized false
-        unit.action = null
+        if (unit.isMoving()) unit.action = null
+        unit.getOtherEscortUnit()?.takeIf { unit.isEscorting() && owns(it) && it.isMoving() }?.action = null
         true
     }
 
     /** Called by native turn automation. Hidden enemies must not cancel or redirect a player's order. */
     internal fun continueDestination(unit: MapUnit) {
-        while (owns(unit) && unit.isMoving() && unit.hasMovement()) {
+        while (owns(unit) && unit.isMoving() && unit.hasMovement() &&
+            (!unit.isEscorting() || unit.getOtherEscortUnit()!!.hasMovement())) {
             val nearby = unit.movement.getMovementToTilesAtPosition(unit.currentTile.position,
                 unit.currentMovement, forPlanning = true)
-            if (nearby.keys.any { tile -> tile.militaryUnit?.let {
+            if (!unit.isCivilian() && !unit.isEscorting() && nearby.keys.any { tile -> tile.militaryUnit?.let {
                     it.isVisibleTo(civ) && civ.isAtWarWith(it.civ)
                 } == true }) {
                 unit.action = null
@@ -104,6 +145,12 @@ class PlayerUnitOperations(private val civ: Civilization, private val spectatorM
             }
             val origin = unit.currentTile
             val first = preview.turns.first()
+            if (CivilianCaptureThreats(civ).at(unit, first.destination).isNotEmpty()) {
+                unit.action = null
+                civ.addNotification("Movement of our [${unit.name}] was stopped to avoid possible capture",
+                    unit.currentTile.position, NotificationCategory.Units, unit.name)
+                return
+            }
             unit.movement.moveToTile(first.destination, plannedPath = first.path)
             if (unit.isDestroyed || unit.currentTile === destination) unit.action = null
             if (unit.currentTile === origin) {

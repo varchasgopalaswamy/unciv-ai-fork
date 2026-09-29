@@ -1201,6 +1201,9 @@ class Tile : IsPartOfGameInfoSerialization {
 
             if (player.playerType == PlayerType.Human)
                 player.exploredRegion.checkTilePosition(position, explorerPosition)
+            // Ordinary sight updates have a batch callback after their caches
+            // are ready. Explicit distant reveals need their own notification.
+            if (!isVisible(player)) player.cache.onTileRevealed?.invoke(this)
         } else {
             exploredBy = exploredBy.withoutItem(player.civID)
         }

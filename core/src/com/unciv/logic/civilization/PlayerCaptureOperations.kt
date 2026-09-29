@@ -10,12 +10,16 @@ import com.unciv.models.ruleset.unique.UniqueType
 
 enum class CaptureChoice { Annex, Puppet, Raze, Liberate, Destroy, StopRazing, ReturnCivilian, KeepCivilian, KeepCity }
 
+/** Expected recipient and unit type; placement still follows the normal unit-placement rules. */
+data class CivilianCaptureOutcome(val recipient: String, val unitType: String?)
+
 /** The displayed explanation remains available for disabled choices. */
 data class CaptureOption(
     val choice: CaptureChoice,
     val label: String,
     val paragraphs: List<String>,
     val unavailableReasons: List<String> = emptyList(),
+    val civilianOutcome: CivilianCaptureOutcome? = null,
 )
 
 data class CaptureDecision(
@@ -83,12 +87,26 @@ class PlayerCaptureOperations(private val civ: Civilization, private val spectat
         }
         val unit = recapturedCivilian(alert) ?: return@synchronized null
         val owner = unit.originalOwningCiv!!
+        val keptType = BattleUnitCapture.keptCivilianUnitType(unit, civ)?.name
+        val returnedType = unit.name.takeIf { owner.cities.isNotEmpty() }
         CaptureDecision(
             title = "Return [${unit.name}] to [${owner.civName}]?",
             paragraphs = listOf("The [${unit.name}] we liberated originally belonged to [${owner.civName}]. They will be grateful if we return it to them."),
             options = listOf(
-                CaptureOption(CaptureChoice.ReturnCivilian, Constants.yes, emptyList()),
-                CaptureOption(CaptureChoice.KeepCivilian, Constants.no, emptyList()),
+                CaptureOption(
+                    CaptureChoice.ReturnCivilian, Constants.yes,
+                    listOf(if (returnedType != null) "[${owner.civName}] receives a [$returnedType]." else "The original owner has no city where the unit can return."),
+                    civilianOutcome = CivilianCaptureOutcome(owner.civName, returnedType),
+                ),
+                CaptureOption(
+                    CaptureChoice.KeepCivilian, Constants.no,
+                    listOf(when (keptType) {
+                        null -> "No replacement unit is available."
+                        unit.name -> "You keep the [${unit.name}]."
+                        else -> "The captured [${unit.name}] becomes a [$keptType]."
+                    }),
+                    civilianOutcome = CivilianCaptureOutcome(civ.civName, keptType),
+                ),
             ),
             unitId = unit.id,
         )

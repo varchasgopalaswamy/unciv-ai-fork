@@ -37,6 +37,26 @@ class PlayerAirOperationsTest {
     }
 
     @Test
+    fun `sweep previews distinguish visible interception capability from private readiness`() {
+        val fighter = game.addUnit("Fighter", player, home.getCenterTile())
+        val interceptor = game.addUnit("Fighter", other, enemyBase.getCenterTile())
+        player.getDiplomacyManager(other)!!.declareWar()
+        val target = game.getTile(4, 0)
+        player.viewableTiles = setOf(home.getCenterTile())
+        val hidden = operations.preview(fighter, Mission.AIR_SWEEP, target)!!
+        assertTrue(hidden.visibleInterceptionThreats.isEmpty())
+        interceptor.attacksThisTurn = 10
+        interceptor.currentMovement = 0f
+        assertEquals(hidden, operations.preview(fighter, Mission.AIR_SWEEP, target))
+        reveal()
+        val visible = operations.preview(fighter, Mission.AIR_SWEEP, target)!!
+        assertEquals(listOf("Fighter"), visible.visibleInterceptionThreats.map { it.name })
+        interceptor.attacksThisTurn = 0
+        interceptor.currentMovement = 2f
+        assertEquals(visible, operations.preview(fighter, Mission.AIR_SWEEP, target))
+    }
+
+    @Test
     fun `rebasing uses native range capacity and movement without mutating its preview`() {
         val fighter = game.addUnit("Fighter", player, home.getCenterTile())
         val target = base.getCenterTile()
@@ -213,7 +233,7 @@ class PlayerAirOperationsTest {
         game.addCity(stranger, game.getTile(12, 0))
         game.addUnit("Warrior", stranger, target)
         assertEquals(before, operations.preview(nuke, Mission.NUCLEAR_STRIKE, target))
-        assertTrue(before.available && before.speculative)
+        assertTrue(before.available && before.affectedTilesOutsideCurrentSight > 0)
         assertTrue(before.visibleVictims.isEmpty())
         assertFalse(Nuke.mayUseNuke(MapUnitCombatant(nuke), target))
         val state = json().toJson(game.gameInfo)
@@ -240,6 +260,24 @@ class PlayerAirOperationsTest {
         assertTrue(nuke.isDestroyed)
         assertTrue(victim.isDestroyed)
         assertEquals(AttackResolution.Completed, game.gameInfo.attackEventsForTesting.last().resolution)
+    }
+
+    @Test
+    fun `nuclear war warnings use supplied remembered ownership until visible again`() {
+        val nuke = game.addUnit("Nuclear Missile", player, home.getCenterTile())
+        val target = game.getTile(4, 0)
+        val third = game.addCiv(game.ruleset.nations.getValue("France"), isPlayer = true)
+        val thirdCity = game.addCity(third, game.getTile(12, 0))
+        player.diplomacyFunctions.makeCivilizationsMeet(third)
+        player.viewableTiles = setOf(home.getCenterTile())
+        val remembered = mapOf(target.position to other.civID)
+        assertEquals(listOf(other), operations.preview(nuke, Mission.NUCLEAR_STRIKE, target, remembered)!!.knownDeclarations)
+        thirdCity.expansion.takeOwnership(target)
+        player.viewableTiles = setOf(home.getCenterTile())
+        assertEquals(listOf(other), operations.preview(nuke, Mission.NUCLEAR_STRIKE, target, remembered)!!.knownDeclarations)
+        assertTrue(operations.preview(nuke, Mission.NUCLEAR_STRIKE, target)!!.knownDeclarations.isEmpty())
+        player.viewableTiles = player.viewableTiles + target
+        assertEquals(listOf(third), operations.preview(nuke, Mission.NUCLEAR_STRIKE, target, remembered)!!.knownDeclarations)
     }
 
     @Test

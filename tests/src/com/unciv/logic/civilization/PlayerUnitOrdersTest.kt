@@ -110,7 +110,7 @@ class PlayerUnitOrdersTest {
         worker.currentTile.stopWorkingOnImprovement()
         warrior.currentMovement = 0f
         val movementOrders = operations.orders(warrior).filter {
-            it.order !in setOf(Order.EXPLORE, Order.STOP_EXPLORATION, Order.STOP_AUTOMATION)
+            it.order !in setOf(Order.EXPLORE, Order.STOP_EXPLORATION, Order.STOP_AUTOMATION, Order.ESCORT, Order.STOP_ESCORT)
         }
         assertTrue(movementOrders.all { !it.available })
         assertTrue(movementOrders.all { "No movement remaining" in it.unavailableReasons })
@@ -121,6 +121,48 @@ class PlayerUnitOrdersTest {
         assertTrue(operations.tryOrder(warrior, Order.FORTIFY_UNTIL_HEALED))
         UnitTurnManager(warrior).endTurn()
         assertEquals(50, warrior.health)
+    }
+
+    @Test
+    fun `formation orders pair owned units without spending movement and survive saving`() {
+        assertNull(operations.escortPartner(warrior))
+        assertFalse(operations.tryOrder(warrior, Order.ESCORT))
+        worker.removeFromTile()
+        worker.putInTile(warrior.currentTile)
+        worker.currentMovement = 0f
+        warrior.currentMovement = 0f
+        assertSame(worker, operations.escortPartner(warrior))
+        val before = json().toJson(game.gameInfo)
+        assertTrue(operations.orders(warrior).single { it.order == Order.ESCORT }.available)
+        assertEquals(before, json().toJson(game.gameInfo))
+        assertTrue(operations.tryOrder(warrior, Order.ESCORT))
+        assertTrue(warrior.isEscorting() && worker.isEscorting())
+        assertFalse(operations.tryOrder(worker, Order.ESCORT))
+        val restored = json().fromJson(GameInfo::class.java, json().toJson(game.gameInfo))
+        restored.setTransients()
+        val restoredPlayer = restored.getCivilization(player.civID)
+        val restoredWarrior = restoredPlayer.units.getCivUnits().single { it.name == "Warrior" }
+        val restoredWorker = restoredPlayer.units.getCivUnits().single { it.name == "Worker" }
+        assertTrue(restoredWarrior.isEscorting() && restoredWorker.isEscorting())
+        assertTrue(PlayerUnitOrders(restoredPlayer).tryOrder(restoredWorker, Order.STOP_ESCORT))
+        assertFalse(restoredWarrior.isEscorting() || restoredWorker.isEscorting())
+        assertEquals(0f, restoredWorker.currentMovement, 0f)
+        assertEquals(0f, restoredWarrior.currentMovement, 0f)
+    }
+
+    @Test
+    fun `formation excludes air units and clears when the partner is lost`() {
+        worker.removeFromTile()
+        worker.putInTile(warrior.currentTile)
+        assertTrue(operations.tryOrder(worker, Order.ESCORT))
+        worker.destroy()
+        assertFalse(warrior.isEscorting())
+        assertNull(operations.escortPartner(warrior))
+        assertFalse(operations.tryOrder(warrior, Order.STOP_ESCORT))
+        val city = game.addCity(player, warrior.currentTile)
+        val plane = game.addUnit("Fighter", player, city.getCenterTile())
+        assertNull(operations.escortPartner(plane))
+        assertFalse(operations.tryOrder(plane, Order.ESCORT))
     }
 
     @Test

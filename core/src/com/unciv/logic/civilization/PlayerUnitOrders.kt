@@ -17,7 +17,7 @@ import java.util.Collections
 class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode: Boolean = false) {
     enum class Order {
         FORTIFY, FORTIFY_UNTIL_HEALED, SLEEP, SLEEP_UNTIL_HEALED, SKIP, WAKE,
-        EXPLORE, STOP_EXPLORATION, AUTOMATE, STOP_AUTOMATION
+        EXPLORE, STOP_EXPLORATION, AUTOMATE, STOP_AUTOMATION, ESCORT, STOP_ESCORT
     }
 
     data class Status(
@@ -53,6 +53,12 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
     private fun canInspect(unit: MapUnit): Boolean = !spectatorMode && !civ.isSpectator() &&
         civ.gameInfo.civilizations.any { it === civ } && PlayerUnitOperations(civ).owns(unit)
 
+    /** The native formation pairs one owned civilian and military unit on the same tile. */
+    fun escortPartner(unit: MapUnit): MapUnit? {
+        if (!canInspect(unit) || unit.baseUnit.isAirUnit()) return null
+        return unit.getOtherEscortUnit()?.takeIf { canInspect(it) && !it.baseUnit.isAirUnit() }
+    }
+
     fun status(unit: MapUnit): Status? {
         if (!canInspect(unit)) return null
         val canHealThisTurn = (!unit.hasUnitMovedThisTurn() && unit.attacksThisTurn == 0) ||
@@ -76,7 +82,7 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
         if (!PlayerOperations(civ, spectatorMode).canAct()) add("This player cannot act now")
         // The desktop permits scheduling exploration and stopping automation
         // even after movement is exhausted. Starting general automation acts now.
-        if (!unit.hasMovement() && order !in setOf(Order.EXPLORE, Order.STOP_EXPLORATION, Order.STOP_AUTOMATION))
+        if (!unit.hasMovement() && order !in setOf(Order.EXPLORE, Order.STOP_EXPLORATION, Order.STOP_AUTOMATION, Order.ESCORT, Order.STOP_ESCORT))
             add("No movement remaining")
         when (order) {
             Order.FORTIFY, Order.FORTIFY_UNTIL_HEALED -> {
@@ -103,6 +109,11 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
             Order.STOP_EXPLORATION -> if (!unit.isExploring()) add("Not exploring")
             Order.AUTOMATE -> if (unit.isAutomated()) add("Already automated")
             Order.STOP_AUTOMATION -> if (!unit.isAutomated()) add("Not automated")
+            Order.ESCORT -> {
+                if (escortPartner(unit) == null) add("Requires an owned civilian and military unit on the same tile; air units cannot escort")
+                if (unit.isEscorting()) add("Already in escort formation")
+            }
+            Order.STOP_ESCORT -> if (escortPartner(unit) == null || !unit.isEscorting()) add("Not in escort formation")
         }
         if (order == Order.FORTIFY_UNTIL_HEALED || order == Order.SLEEP_UNTIL_HEALED) {
             if (unit.health >= 100) add("The unit is already at full health")
@@ -136,6 +147,8 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
                 unit.action = null
                 unit.automated = false
             }
+            Order.ESCORT -> unit.startEscorting()
+            Order.STOP_ESCORT -> unit.stopEscorting()
         }
         true
     }

@@ -6,6 +6,7 @@ import com.unciv.Constants
 import com.unciv.UncivGame
 import com.unciv.logic.automation.Timers.Companion.timeThis
 import com.unciv.logic.battle.AttackRecorder
+import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.civilization.diplomacy.RelationshipLevel
 import com.unciv.logic.map.BFS
 import com.unciv.logic.map.HexCoord
@@ -74,6 +75,8 @@ class UnitMovement(val unit: MapUnit) {
         movementCostCache: HashMap<Int, Float> = HashMap(),
         includeOtherEscortUnit: Boolean = true,
         forPlanning: Boolean = false,
+        useMaximumMovementForEscort: Boolean = false,
+        observer: Civilization = unit.civ,
     ): PathsToTilesWithinTurn = timeThis("getMovementToTilesAtPosition") {
         if (!forPlanning && UncivGame.Current.settings.useAStarPathfinding) {
             if (!considerZoneOfControl) require(includeOtherEscortUnit)
@@ -91,15 +94,14 @@ class UnitMovement(val unit: MapUnit) {
 
         // If I can't move my only option is to stay...
         if (unitMovement == 0f || unit.cache.cannotMove) return distanceToTiles
-        // If our escort can't move, ditto
-        if (includeOtherEscortUnit && unit.isEscorting()
-            && unit.getOtherEscortUnit()?.currentMovement == 0f) return distanceToTiles
+        val escort = if (includeOtherEscortUnit && unit.isEscorting()) unit.getOtherEscortUnit() else null
+        val escortMovement = escort?.let { if (useMaximumMovementForEscort) it.getMaxMovement().toFloat() else it.currentMovement }
+        // Later-turn estimates use both units' refreshed movement, not today's spent points.
+        if (escortMovement == 0f || escort?.cache?.cannotMove == true) return distanceToTiles
 
         // Loop-invariant across the whole search: escort state and the usable movement cap never change
         // during one call, but were recomputed on every edge relaxation below.
-        val usableMovement = if (includeOtherEscortUnit && unit.isEscorting())
-            minOf(unitMovement, unit.getOtherEscortUnit()!!.currentMovement)
-        else unitMovement
+        val usableMovement = if (escortMovement != null) minOf(unitMovement, escortMovement) else unitMovement
 
         var tilesToCheck = listOf(unitTile)
 
@@ -112,11 +114,11 @@ class UnitMovement(val unit: MapUnit) {
                     // ignore this tile
                     if (tilesToIgnoreBitset != null && tilesToIgnoreBitset.get(neighbor.zeroBasedIndex)) continue // ignore this tile
                     var totalDistanceToTile: Float = when {
-                        !neighbor.isExplored(unit.civ) ->
+                        !MovementCost.isKnown(neighbor, unit, observer) ->
                             tileToCheckMovement + 1f  // If we don't know then we just guess it to be 1.
 
                         !canPassThroughCache.getOrPut(neighbor.zeroBasedIndex){
-                            canPassThrough(neighbor, forPlanning = forPlanning)
+                            canPassThrough(neighbor, includeOtherEscortUnit, forPlanning, observer)
                         } -> unitMovement // Can't go here.
                         // The reason that we don't just "return" is so that when calculating how to reach an enemy,
                         // You need to assume his tile is reachable, otherwise all movement algorithms on reaching enemy
@@ -124,7 +126,7 @@ class UnitMovement(val unit: MapUnit) {
                         else -> {
                             val key = HexMath.tilesAndNeighborUniqueIndex(tileToCheck, neighbor)
                             val movementCost = movementCostCache.getOrPut(key) {
-                                MovementCost.getMovementCostBetweenAdjacentTilesEscort(unit, tileToCheck, neighbor, considerZoneOfControl, includeOtherEscortUnit, forPlanning)
+                                MovementCost.getMovementCostBetweenAdjacentTilesEscort(unit, tileToCheck, neighbor, considerZoneOfControl, includeOtherEscortUnit, forPlanning, observer)
                             }
                             tileToCheckMovement + movementCost
                         }
@@ -224,7 +226,8 @@ class UnitMovement(val unit: MapUnit) {
                         visitedTilesBitset,
                         passThroughCacheNew,
                         movementCostCache,
-                        forPlanning = forPlanning
+                        forPlanning = forPlanning,
+                        useMaximumMovementForEscort = true,
                     )
                 }
                 for (reachableTile in distanceToTilesThisTurn.keys) {
@@ -594,7 +597,8 @@ class UnitMovement(val unit: MapUnit) {
             previousTile = tile
 
             // We can't continue, stop here.
-            if (unit.isDestroyed || unit.currentMovement - passingMovementSpent < Constants.minimumMovementEpsilon) {
+            if (unit.isDestroyed || unit.currentMovement - passingMovementSpent < Constants.minimumMovementEpsilon ||
+                escortUnit != null && (escortUnit.isDestroyed || !escortUnit.hasMovement())) {
                 break
             }
         }
@@ -719,8 +723,8 @@ class UnitMovement(val unit: MapUnit) {
      * Leave it as default unless you know what [canMoveTo] does.
      */
     @Readonly
-    fun canMoveTo(tile: Tile, assumeCanPassThrough: Boolean = false, allowSwap: Boolean = false, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false) =
-        getCannotMoveToReason(tile, assumeCanPassThrough, allowSwap, includeOtherEscortUnit, forPlanning) == null
+    fun canMoveTo(tile: Tile, assumeCanPassThrough: Boolean = false, allowSwap: Boolean = false, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false, observer: Civilization = unit.civ) =
+        getCannotMoveToReason(tile, assumeCanPassThrough, allowSwap, includeOtherEscortUnit, forPlanning, observer) == null
 
     enum class CannotMoveToReason{
         TerrainImpassable,
@@ -735,12 +739,12 @@ class UnitMovement(val unit: MapUnit) {
     }
 
     @Readonly
-    fun getCannotMoveToReason(tile: Tile, assumeCanPassThrough: Boolean = false, allowSwap: Boolean = false, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false): CannotMoveToReason? {
-        if (forPlanning && !tile.isExplored(unit.civ)) return null
+    fun getCannotMoveToReason(tile: Tile, assumeCanPassThrough: Boolean = false, allowSwap: Boolean = false, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false, observer: Civilization = unit.civ): CannotMoveToReason? {
+        if (forPlanning && !MovementCost.isKnown(tile, unit, observer)) return null
         if (unit.baseUnit.isAirUnit())
             return getAirUnitCannotMoveToReason(tile, unit)
 
-        val canPassThroughReason = if (assumeCanPassThrough) null else cannotPassThroughReason(tile, forPlanning = forPlanning)
+        val canPassThroughReason = if (assumeCanPassThrough) null else cannotPassThroughReason(tile, includeOtherEscortUnit, forPlanning, observer)
         if (canPassThroughReason != null) return canPassThroughReason
 
         // even if they'll let us pass through, we can't enter their city - unless we just captured it
@@ -748,11 +752,11 @@ class UnitMovement(val unit: MapUnit) {
             return CannotMoveToReason.CannotEnterCityCenter
 
         if (includeOtherEscortUnit && unit.isEscorting()
-            && !unit.getOtherEscortUnit()!!.movement.canMoveTo(tile, assumeCanPassThrough, allowSwap, includeOtherEscortUnit = false, forPlanning = forPlanning))
+            && !unit.getOtherEscortUnit()!!.movement.canMoveTo(tile, assumeCanPassThrough, allowSwap, includeOtherEscortUnit = false, forPlanning = forPlanning, observer = observer))
             return CannotMoveToReason.EscortCannotMove
 
-        val civilian = tile.civilianUnit?.takeIf { !forPlanning || it.civ === unit.civ || it.isVisibleTo(unit.civ) }
-        val military = tile.militaryUnit?.takeIf { !forPlanning || it.civ === unit.civ || it.isVisibleTo(unit.civ) }
+        val civilian = tile.civilianUnit?.takeIf { !forPlanning || it.civ === observer || it.isVisibleTo(observer) }
+        val military = tile.militaryUnit?.takeIf { !forPlanning || it.civ === observer || it.isVisibleTo(observer) }
         val tileIsEmpty = if (unit.isCivilian())
             (civilian == null || (allowSwap && civilian.owner == unit.owner))
                 && (military == null || military.owner == unit.owner)
@@ -817,13 +821,13 @@ class UnitMovement(val unit: MapUnit) {
      * Leave it as default unless you know what [canPassThrough] does.
      */
     @Readonly
-    fun canPassThrough(tile: Tile, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false): Boolean
-        = cannotPassThroughReason(tile, includeOtherEscortUnit, forPlanning) == null
+    fun canPassThrough(tile: Tile, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false, observer: Civilization = unit.civ): Boolean
+        = cannotPassThroughReason(tile, includeOtherEscortUnit, forPlanning, observer) == null
 
     @Readonly
-    fun cannotPassThroughReason(tile: Tile, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false): CannotMoveToReason? {
+    fun cannotPassThroughReason(tile: Tile, includeOtherEscortUnit: Boolean = true, forPlanning: Boolean = false, observer: Civilization = unit.civ): CannotMoveToReason? {
         // A preview may speculate about unexplored terrain, but must not inspect it.
-        if (forPlanning && !tile.isExplored(unit.civ)) return null
+        if (forPlanning && !MovementCost.isKnown(tile, unit, observer)) return null
         if (tile.isImpassible()) {
             // special exception - ice tiles are technically impassible, but some units can move through them anyway
             // helicopters can pass through impassable tiles like mountains
@@ -854,13 +858,14 @@ class UnitMovement(val unit: MapUnit) {
 
         if (unit.cache.canEnterCityStates && tile.getOwner()?.isCityState == true)
             return null
-        if (!unit.cache.canEnterForeignTerrain && !tile.canCivPassThrough(unit.civ)) return CannotMoveToReason.CannotEnterForeignLand
+        // Another player's estimate cannot use private open-border agreements to rule out a threat.
+        if ((!forPlanning || observer === unit.civ) && !unit.cache.canEnterForeignTerrain && !tile.canCivPassThrough(unit.civ)) return CannotMoveToReason.CannotEnterForeignLand
 
         // The first unit is:
         //   1. Either military unit
         //   2. or unprotected civilian
         //   3. or unprotected air unit while no civilians on tile
-        val firstUnit = tile.getFirstUnit()?.takeIf { !forPlanning || it.civ === unit.civ || it.isVisibleTo(unit.civ) }
+        val firstUnit = tile.getFirstUnit()?.takeIf { !forPlanning || it.civ === observer || it.isVisibleTo(observer) }
         // Moving to non-empty tile
         if (firstUnit != null && unit.civ != firstUnit.civ) {
             // Allow movement through unguarded, at-war Civilian Unit. Capture on the way
@@ -873,7 +878,7 @@ class UnitMovement(val unit: MapUnit) {
                 return CannotMoveToReason.TileIsNotEmpty
         }
         if (includeOtherEscortUnit && unit.isEscorting()) {
-            val escortReason = unit.getOtherEscortUnit()!!.movement.cannotPassThroughReason(tile, false, forPlanning)
+            val escortReason = unit.getOtherEscortUnit()!!.movement.cannotPassThroughReason(tile, false, forPlanning, observer)
             if (escortReason != null) return escortReason
         }
         return null
