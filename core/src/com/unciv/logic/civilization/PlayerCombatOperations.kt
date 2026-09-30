@@ -1,8 +1,10 @@
 package com.unciv.logic.civilization
 
+import com.unciv.logic.battle.AttackParticipantOutcome
 import com.unciv.logic.battle.AttackResolution
 import com.unciv.logic.battle.Battle
 import com.unciv.logic.battle.BattleDamage
+import com.unciv.logic.battle.BattleUnitCapture
 import com.unciv.logic.battle.CityCombatant
 import com.unciv.logic.battle.ICombatant
 import com.unciv.logic.battle.MapUnitCombatant
@@ -35,7 +37,28 @@ class PlayerCombatOperations(private val civ: Civilization, private val spectato
         val maxDamageToAttacker: Int,
         val minDamageToDefender: Int,
         val maxDamageToDefender: Int,
-    )
+    ) {
+        /**
+         * Whether the direct civilian/city target can be captured in the previewed exchange.
+         * Uses the same capture rules as execution. Placement, withdrawal and triggered effects
+         * can still change the result. Guarded civilians and military prize captures are separate.
+         */
+        @Readonly
+        fun civilianOrCityCapturePossible(): Boolean = when (val target = defender) {
+            is CityCombatant -> Battle.cityDefeatAction(attacker, target.city) == Battle.CityDefeatAction.Conquer &&
+                maxDamageToDefender >= target.getHealth() - 1
+            else -> civilianCaptureOutcome() == AttackParticipantOutcome.Captured
+        }
+
+        /** Direct melee capture bypasses damage; forbidden civilian captures destroy the unit. */
+        @Readonly
+        fun civilianCaptureOutcome(): AttackParticipantOutcome? {
+            val civilian = (defender as? MapUnitCombatant)?.unit ?: return null
+            if (!civilian.isCivilian() || !attacker.isMelee()) return null
+            return if (BattleUnitCapture.destroysCivilianOnCapture(civilian, attacker.getCivInfo()))
+                AttackParticipantOutcome.Destroyed else AttackParticipantOutcome.Captured
+        }
+    }
 
     /** An accepted route may stop before attacking when it discovers an obstacle. */
     data class AttackResult(

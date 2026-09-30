@@ -226,17 +226,33 @@ object Battle {
         }
     }
 
-    private fun handleCityDefeated(defender: ICombatant, attacker: ICombatant, attackRecorder: AttackRecorder): AttackParticipantOutcome? {
-        if (!defender.isDefeated() || defender !is CityCombatant || attacker !is MapUnitCombatant || 
+    enum class CityDefeatAction { None, Conquer, Destroy, Raid }
+
+    /**
+     * Action taken if this attacker defeats the city. This does not predict damage,
+     * survival, reachability or the player's later conquest choice.
+     */
+    @Readonly
+    fun cityDefeatAction(attacker: ICombatant, city: City): CityDefeatAction {
+        if (attacker !is MapUnitCombatant ||
             (!attacker.isMelee() && !attacker.unit.hasUnique(UniqueType.CanDestroyCities, checkCivInfoUniques = true))
             || attacker.unit.hasUnique(UniqueType.CannotCaptureCities, checkCivInfoUniques = true)
-        ) return null
+        ) return CityDefeatAction.None
 
-        // Must come before normal conquest logic so units that cannot capture cities can still destroy them
-        // Melee units can capture capitals; any unit with CanDestroyCities can destroy non-capital cities
-        if (defender.isDefeated() && defender.city.canBeDestroyed()) {
-            val destroyFilters = attacker.unit.getMatchingUniques(UniqueType.CanDestroyCities).map { it.params[0] }
-            if (destroyFilters.any { filter -> defender.city.matchesFilter(filter.trim(), attacker.getCivInfo()) }) {
+        // Preserve the execution order: destruction, barbarian raid, then ordinary conquest.
+        if (city.canBeDestroyed() && attacker.unit.getMatchingUniques(UniqueType.CanDestroyCities)
+                .any { city.matchesFilter(it.params[0].trim(), attacker.getCivInfo()) })
+            return CityDefeatAction.Destroy
+        if (attacker.unit.civ.isBarbarian) return CityDefeatAction.Raid
+        return CityDefeatAction.Conquer
+    }
+
+    private fun handleCityDefeated(defender: ICombatant, attacker: ICombatant, attackRecorder: AttackRecorder): AttackParticipantOutcome? {
+        if (!defender.isDefeated() || defender !is CityCombatant || attacker !is MapUnitCombatant) return null
+
+        when (cityDefeatAction(attacker, defender.city)) {
+            CityDefeatAction.None -> return null
+            CityDefeatAction.Destroy -> {
                 val cityName = defender.city.name
                 val defendingCiv = defender.getCivInfo()
 
@@ -256,21 +272,21 @@ object Battle {
 
                 return AttackParticipantOutcome.Destroyed
             }
-        }
-        
-        // Barbarians can't capture cities, instead raiding them for gold
-        if (attacker.unit.civ.isBarbarian) {
-            defender.takeDamage(-1, attackRecorder) // Back to 2 HP
-            val ransom = min(200, defender.city.civ.gold)
-            defender.city.civ.addGold(-ransom)
-            defender.city.civ.addNotification(
-                "Barbarians raided [${defender.city.name}] and stole [$ransom] Gold from your treasury!",
-                defender.city.location,
-                NotificationCategory.War,
-                NotificationIcon.War
-            )
-            attacker.unit.destroy(attackRecorder = attackRecorder) // Remove the barbarian
-            return AttackParticipantOutcome.Raided
+            CityDefeatAction.Raid -> {
+                // Barbarians can't capture cities, instead raiding them for gold.
+                defender.takeDamage(-1, attackRecorder) // Back to 2 HP
+                val ransom = min(200, defender.city.civ.gold)
+                defender.city.civ.addGold(-ransom)
+                defender.city.civ.addNotification(
+                    "Barbarians raided [${defender.city.name}] and stole [$ransom] Gold from your treasury!",
+                    defender.city.location,
+                    NotificationCategory.War,
+                    NotificationIcon.War
+                )
+                attacker.unit.destroy(attackRecorder = attackRecorder) // Remove the barbarian
+                return AttackParticipantOutcome.Raided
+            }
+            CityDefeatAction.Conquer -> Unit
         }
         conquerCity(defender.city, attacker, attackRecorder)
         // Human city-conquest choices can delay ownership transfer until after this attack.

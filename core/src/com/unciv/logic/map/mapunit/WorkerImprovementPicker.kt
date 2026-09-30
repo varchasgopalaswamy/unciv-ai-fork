@@ -53,7 +53,7 @@ class WorkerImprovementPicker(private val unit: MapUnit) {
 
     /** Calculate maintenance costs, matching logic in [getTransportationUpkeep][com.unciv.logic.civilization.transients.CivInfoStatsForNextTurn.getTransportationUpkeep] */
     // Not centralized in [TileStatFunctions] because the actual upkeep calculation can optimize some things and rounding errors might accumulate differently
-    fun getMaintenance(improvement: TileImprovement): Stats {
+    fun getMaintenance(improvement: TileImprovement, tile: Tile = this.tile): Stats {
         val maintenance = Stats()
         if (currentPlayerCiv.getMatchingUniques(UniqueType.NoImprovementMaintenanceInSpecificTiles)
                 .any { tile.matchesFilter(it.params[0], currentPlayerCiv) }

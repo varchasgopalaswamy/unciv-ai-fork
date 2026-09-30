@@ -19,6 +19,14 @@ import kotlin.random.Random
 
 object BattleUnitCapture {
 
+    /** Rules that destroy a civilian on capture, before original-owner recovery or conversion. */
+    @Readonly
+    fun destroysCivilianOnCapture(unit: MapUnit, capturingCiv: Civilization): Boolean =
+        unit.hasUnique(UniqueType.Uncapturable) ||
+            (capturingCiv.isCityState &&
+                (unit.hasUnique(UniqueType.FoundCity, GameContext.IgnoreConditionals) ||
+                    unit.hasUnique(UniqueType.FoundPuppetCity, GameContext.IgnoreConditionals)))
+
     fun tryCaptureMilitaryUnit(attacker: ICombatant, defender: ICombatant, attackedTile: Tile, attackRecorder: AttackRecorder? = null): Boolean {
         // https://forums.civfanatics.com/threads/prize-ships-for-land-units.650196/
         // https://civilization.fandom.com/wiki/Module:Data/Civ5/GK/Defines\
@@ -140,15 +148,7 @@ object BattleUnitCapture {
 
         var wasDestroyedInstead = false
         when {
-            // Uncapturable units are destroyed
-            defender.unit.hasUnique(UniqueType.Uncapturable) -> {
-                capturedUnit.destroy(attackRecorder = attackRecorder)
-                wasDestroyedInstead = true
-            }
-            // City states can never capture settlers at all
-            // Same with puppet city sttlers
-             attacker.getCivInfo().isCityState && (capturedUnit.hasUnique(UniqueType.FoundCity, GameContext.IgnoreConditionals) ||
-                 capturedUnit.hasUnique(UniqueType.FoundPuppetCity, GameContext.IgnoreConditionals)) -> {
+            destroysCivilianOnCapture(capturedUnit, attacker.getCivInfo()) -> {
                 capturedUnit.destroy(attackRecorder = attackRecorder)
                 wasDestroyedInstead = true
             }

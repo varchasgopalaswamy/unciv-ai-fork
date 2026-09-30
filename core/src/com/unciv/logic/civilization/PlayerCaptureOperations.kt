@@ -13,6 +13,16 @@ enum class CaptureChoice { Annex, Puppet, Raze, Liberate, Destroy, StopRazing, R
 /** Expected recipient and unit type; placement still follows the normal unit-placement rules. */
 data class CivilianCaptureOutcome(val recipient: String, val unitType: String?)
 
+/** Native diplomacy values; these do not describe another human player's intentions. */
+data class CaptureDiplomaticEffect(
+    val civilizationId: String,
+    val stat: String,
+    val operation: String,
+    val value: Float,
+    val before: Float?,
+    val after: Float,
+)
+
 /** The displayed explanation remains available for disabled choices. */
 data class CaptureOption(
     val choice: CaptureChoice,
@@ -20,6 +30,7 @@ data class CaptureOption(
     val paragraphs: List<String>,
     val unavailableReasons: List<String> = emptyList(),
     val civilianOutcome: CivilianCaptureOutcome? = null,
+    val diplomaticEffect: CaptureDiplomaticEffect? = null,
 )
 
 data class CaptureDecision(
@@ -36,6 +47,11 @@ data class CaptureDecision(
  * owned CityConquered alert authorizes that transfer, never the caller's city ID alone.
  */
 class PlayerCaptureOperations(private val civ: Civilization, private val spectatorMode: Boolean = false) {
+    private companion object {
+        const val RETURN_INFLUENCE = 45f
+        const val RETURN_OPINION = 20f
+    }
+
     private fun canRead(): Boolean = !spectatorMode && !civ.isSpectator() &&
         civ.gameInfo.civilizations.any { it === civ }
 
@@ -97,6 +113,7 @@ class PlayerCaptureOperations(private val civ: Civilization, private val spectat
                     CaptureChoice.ReturnCivilian, Constants.yes,
                     listOf(if (returnedType != null) "[${owner.civName}] receives a [$returnedType]." else "The original owner has no city where the unit can return."),
                     civilianOutcome = CivilianCaptureOutcome(owner.civName, returnedType),
+                    diplomaticEffect = civilianReturnDiplomacy(owner),
                 ),
                 CaptureOption(
                     CaptureChoice.KeepCivilian, Constants.no,
@@ -180,6 +197,17 @@ class PlayerCaptureOperations(private val civ: Civilization, private val spectat
         true
     }
 
+    private fun civilianReturnDiplomacy(owner: Civilization): CaptureDiplomaticEffect? {
+        val diplomacy = owner.getDiplomacyManager(civ) ?: return null
+        return when {
+            owner.isCityState -> CaptureDiplomaticEffect(owner.civID, "Influence", "ADD", RETURN_INFLUENCE,
+                diplomacy.getInfluence(), diplomacy.getInfluence() + RETURN_INFLUENCE)
+            owner.isMajorCiv() -> CaptureDiplomaticEffect(owner.civID, "NativeOpinion.ReturnedCapturedUnits", "SET", RETURN_OPINION,
+                diplomacy.getModifier(DiplomaticModifiers.ReturnedCapturedUnits).takeIf { owner.isAI() }, RETURN_OPINION)
+            else -> null
+        }
+    }
+
     private fun returnCivilian(unit: MapUnit) {
         val owner = unit.originalOwningCiv!!
         val tile = unit.currentTile
@@ -187,9 +215,9 @@ class PlayerCaptureOperations(private val civ: Civilization, private val spectat
         unit.destroy()
         val closestCity = owner.cities.minByOrNull { it.getCenterTile().aerialDistanceTo(tile) }
         if (closestCity != null) owner.units.placeUnitNearTile(closestCity.location.toHexCoord(), unitName)
-        if (owner.isCityState) owner.getDiplomacyManagerOrMeet(civ).addInfluence(45f)
+        if (owner.isCityState) owner.getDiplomacyManagerOrMeet(civ).addInfluence(RETURN_INFLUENCE)
         else if (owner.isMajorCiv()) owner.getDiplomacyManagerOrMeet(civ)
-            .setModifier(DiplomaticModifiers.ReturnedCapturedUnits, 20f)
+            .setModifier(DiplomaticModifiers.ReturnedCapturedUnits, RETURN_OPINION)
         val actions = sequence {
             yield(LocationAction(tile.position))
             if (closestCity != null) yield(LocationAction(closestCity.location))

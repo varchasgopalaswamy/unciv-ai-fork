@@ -6,6 +6,7 @@ import com.unciv.logic.map.mapunit.UnitWorkerRepair
 import com.unciv.logic.map.mapunit.WorkerImprovementPicker
 import com.unciv.logic.map.tile.RoadStatus
 import com.unciv.models.UnitActionType
+import com.unciv.models.stats.Stat
 import com.unciv.testing.BaseTestRunner
 import com.unciv.testing.TestGame
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActions
@@ -102,13 +103,53 @@ class PlayerWorkerOperationsTest {
         val option = WorkerImprovementPicker(worker).options().single { it.improvement.name == "Farm" }
         assertTrue(option.report.isQueueable())
         assertEquals("Remove Forest", option.report.removalImprovement?.name)
+        val before = json().toJson(game.gameInfo)
+        val planned = operations.plannedQueue(worker, "Farm")!!
+        assertEquals(before, json().toJson(game.gameInfo))
         assertTrue(operations.tryStartJob(worker, "Farm"))
+        assertEquals(planned, operations.queue(worker))
         assertEquals(listOf("Remove Forest", "Farm"), operations.queue(worker).map { it.name })
         while (tile.improvementInProgress == "Remove Forest") tile.doWorkerTurn(worker)
         assertFalse("Forest" in tile.terrainFeatures)
         assertEquals("Farm", tile.improvementInProgress)
         while (tile.improvementInProgress != null) tile.doWorkerTurn(worker)
         assertEquals("Farm", tile.improvement)
+    }
+
+    @Test
+    fun `plans preserve partial clearing and its existing final job`() {
+        game.setTileFeatures(tile.position, "Forest")
+        tile.tileResource = game.ruleset.tileResources.getValue("Spices")
+        player.tech.addTechnology("Calendar")
+        player.tech.addTechnology("Mining")
+        assertTrue(operations.tryStartJob(worker, "Plantation"))
+        tile.doWorkerTurn(worker)
+        val remaining = operations.queue(worker)
+        assertEquals(remaining, operations.plannedQueue(worker, "Plantation"))
+        // Picking another order with the same first step retains the existing queue.
+        assertEquals(remaining, operations.plannedQueue(worker, "Farm"))
+        assertTrue(operations.tryStartJob(worker, "Farm"))
+        assertEquals(remaining, operations.queue(worker))
+        assertTrue(operations.tryStopJob(worker))
+        game.gameInfo.gameParameters.godMode = true
+        assertEquals(listOf(1, 1), operations.plannedQueue(worker, "Plantation")!!.map { it.remainingTurns })
+        assertTrue(operations.tryStartJob(worker, "Plantation"))
+        assertEquals(operations.plannedQueue(worker, "Plantation"), operations.queue(worker))
+    }
+
+    @Test
+    fun `clearing grant preview equals native city production without awarding it early`() {
+        game.setTileFeatures(tile.position, "Forest")
+        city.cityConstructions.constructionQueue.clear()
+        city.cityConstructions.constructionQueue.add("Granary")
+        val before = json().toJson(game.gameInfo)
+        val grant = tile.improvementFunctions.removalYieldGrant("Forest", player)!!
+        assertEquals(before, json().toJson(game.gameInfo))
+        assertSame(city, grant.city)
+        assertTrue(grant.stats[Stat.Production] > 0)
+        val production = city.cityConstructions.getWorkDone("Granary")
+        tile.setImprovement("Remove Forest", player)
+        assertEquals(production + grant.stats[Stat.Production].toInt(), city.cityConstructions.getWorkDone("Granary"))
     }
 
     @Test
@@ -153,7 +194,9 @@ class PlayerWorkerOperationsTest {
         tile.setPillaged()
         player.tech.addTechnology("The Wheel")
         assertTrue(operations.tryStartJob(worker, "Road"))
+        val planned = operations.plannedQueue(worker, Constants.repair)
         assertTrue(operations.tryStartJob(worker, Constants.repair))
+        assertEquals(planned, operations.queue(worker))
         assertEquals(listOf("Road", Constants.repair), operations.queue(worker).map { it.name })
         assertTrue(operations.tryStopJob(worker))
         game.addCity(other, game.getTile(6, 0))

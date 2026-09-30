@@ -223,12 +223,44 @@ class PlayerCaptureOperationsTest {
         assertTrue(decision.title.contains(enemy.civName))
         assertTrue(decision.paragraphs.single().contains("originally belonged"))
         assertEquals(CivilianCaptureOutcome(enemy.civName, "Worker"), decision.options.single { it.choice == CaptureChoice.ReturnCivilian }.civilianOutcome)
+        val reward = decision.options.single { it.choice == CaptureChoice.ReturnCivilian }.diplomaticEffect!!
+        assertEquals("SET", reward.operation)
+        assertEquals("NativeOpinion.ReturnedCapturedUnits", reward.stat)
+        assertNull(reward.before) // Native opinion history is not displayed for human players.
+        assertEquals(20f, reward.after, 0f)
+        enemy.playerType = PlayerType.AI
+        assertEquals(0f, operations.captureDecision(alert)!!.options.single { it.choice == CaptureChoice.ReturnCivilian }.diplomaticEffect!!.before!!, 0f)
+        enemy.getDiplomacyManager(player)!!.setModifier(DiplomaticModifiers.ReturnedCapturedUnits, 20f)
+        val repeated = operations.captureDecision(alert)!!.options.single { it.choice == CaptureChoice.ReturnCivilian }.diplomaticEffect!!
+        assertEquals(20f, repeated.before!!, 0f)
+        assertEquals(20f, repeated.after, 0f)
         assertEquals(CivilianCaptureOutcome(player.civName, "Worker"), decision.options.single { it.choice == CaptureChoice.KeepCivilian }.civilianOutcome)
         assertTrue(operations.tryResolve(alert, CaptureChoice.ReturnCivilian))
         assertTrue(worker.isDestroyed)
         assertEquals(1, enemy.units.getCivUnits().count { it.name == "Worker" })
         assertEquals(20f, enemy.getDiplomacyManager(player)!!.diplomaticModifiers.getValue(DiplomaticModifiers.ReturnedCapturedUnits.name), 0f)
         assertFalse(operations.tryResolve(alert, CaptureChoice.ReturnCivilian))
+    }
+
+    @Test
+    fun `rescued city state civilian advertises the influence actually granted`() {
+        val minor = testGame.addCiv(testGame.ruleset.nations.getValue("Geneva"))
+        testGame.addCity(minor, testGame.getTile(-5, -5))
+        player.diplomacyFunctions.makeCivilizationsMeet(minor)
+        val diplomacy = minor.getDiplomacyManager(player)!!
+        diplomacy.setInfluence(12f)
+        val barbarian = testGame.addBarbarianCiv().apply { victoryManager.civInfo = this }
+        val warrior = testGame.addUnit("Warrior", player, testGame.getTile(0, -2))
+        val worker = testGame.addUnit("Worker", minor, testGame.getTile(1, -2)).apply { originalOwner = minor.civID }
+        worker.capturedBy(barbarian)
+        BattleUnitCapture.captureCivilianUnit(MapUnitCombatant(warrior), MapUnitCombatant(worker))
+        val alert = player.popupAlerts.single { it.type == AlertType.RecapturedCivilian }
+        val before = json().toJson(game)
+        val choice = operations.captureDecision(alert)!!.options.single { it.choice == CaptureChoice.ReturnCivilian }
+        assertEquals(before, json().toJson(game))
+        assertEquals(CaptureDiplomaticEffect(minor.civID, "Influence", "ADD", 45f, 12f, 57f), choice.diplomaticEffect)
+        assertTrue(operations.tryResolve(alert, CaptureChoice.ReturnCivilian))
+        assertEquals(choice.diplomaticEffect!!.after, diplomacy.getInfluence(), 0f)
     }
 
     @Test

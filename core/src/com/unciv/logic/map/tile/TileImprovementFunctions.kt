@@ -1,6 +1,7 @@
 package com.unciv.logic.map.tile
 
 import com.unciv.Constants
+import com.unciv.logic.city.City
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.civilization.LocationAction
 import com.unciv.logic.civilization.NotificationCategory
@@ -326,11 +327,16 @@ class TileImprovementFunctions(val tile: Tile) {
         }
     }
 
-    private fun tryProvideProductionToClosestCity(removedTerrainFeature: String, civ: Civilization) {
+    data class RemovalYieldGrant(val city: City, val stats: Stats)
+
+    /** One-time clearing yield, before removal, without changing the city or tile. */
+    fun removalYieldGrant(removedTerrainFeature: String, civ: Civilization): RemovalYieldGrant? {
+        if (tile.ruleset.terrains[removedTerrainFeature]?.hasUnique(UniqueType.ProductionBonusWhenRemoved) != true)
+            return null
         val closestCity = civ.cities.minByOrNull { it.getCenterTile().aerialDistanceTo(tile) }
-            ?: return
+            ?: return null
         val distance = closestCity.getCenterTile().aerialDistanceTo(tile)
-        if (distance > 5) return
+        if (distance > 5) return null
         var stats = Stats()
         for (unique in tile.getTerrainMatchingUniques(UniqueType.ProductionBonusWhenRemoved)) {
             var statsToAdd = unique.stats
@@ -340,9 +346,14 @@ class TileImprovementFunctions(val tile: Tile) {
                 statsToAdd *= unique.getGameProgressModifier(civ)
             stats.add(statsToAdd)
         }
-        if (stats.isEmpty()) return
+        if (stats.isEmpty()) return null
         if (distance != 1) stats *= (6 - distance) / 4f
         if (tile.owningCity == null || tile.owningCity!!.civ != civ) stats *= 2 / 3f
+        return RemovalYieldGrant(closestCity, stats)
+    }
+
+    private fun tryProvideProductionToClosestCity(removedTerrainFeature: String, civ: Civilization) {
+        val (closestCity, stats) = removalYieldGrant(removedTerrainFeature, civ) ?: return
         for ((stat, value) in stats) {
             closestCity.addStat(stat, value.toInt())
             val locations = LocationAction(tile.position, closestCity.location.toHexCoord())
