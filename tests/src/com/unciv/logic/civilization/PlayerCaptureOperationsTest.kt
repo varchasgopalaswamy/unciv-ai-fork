@@ -44,6 +44,42 @@ class PlayerCaptureOperationsTest {
     }
 
     @Test
+    fun `marriage disposition validates owned consent without conquering the city again`() {
+        city.moveToCiv(player)
+        city.isPuppet = true
+        city.foundingCivObject = null
+        val population = city.population.population
+        val alert = PopupAlert(AlertType.DiplomaticMarriage, city.id).also { player.popupAlerts.add(it) }
+        val before = json().toJson(game)
+        assertEquals(listOf(CaptureChoice.Annex, CaptureChoice.Puppet), operations.captureDecision(alert)!!.options.map { it.choice })
+        assertFalse(operations.tryResolve(PopupAlert(alert.type, alert.value), CaptureChoice.Annex))
+        assertFalse(PlayerCaptureOperations(enemy).tryResolve(alert, CaptureChoice.Annex))
+        assertFalse(operations.tryResolve(alert, CaptureChoice.Raze))
+        assertEquals(before, json().toJson(game))
+        assertTrue(operations.tryResolve(alert, CaptureChoice.Annex))
+        assertFalse(city.isPuppet)
+        assertEquals(population, city.population.population)
+        assertFalse(city.isInResistance())
+        assertFalse(operations.tryResolve(alert, CaptureChoice.Annex))
+    }
+
+    @Test
+    fun `marriage supports keeping a puppet and one city challenge destruction`() {
+        city.moveToCiv(player)
+        city.isPuppet = true
+        val alert = PopupAlert(AlertType.DiplomaticMarriage, city.id).also { player.popupAlerts.add(it) }
+        assertTrue(operations.tryResolve(alert, CaptureChoice.Puppet))
+        assertTrue(city.isPuppet)
+        game.gameParameters.oneCityChallenge = true
+        player.popupAlerts.add(alert)
+        assertEquals(listOf(CaptureChoice.Destroy), operations.captureDecision(alert)!!.options.map { it.choice })
+        assertFalse(operations.tryResolve(alert, CaptureChoice.Puppet))
+        assertTrue(operations.tryResolve(alert, CaptureChoice.Destroy))
+        assertFalse(player.cities.contains(city))
+        assertFalse(player.popupAlerts.contains(alert))
+    }
+
+    @Test
     fun `traded city decision is owned and supports keeping or liberating without conquest`() {
         val original = testGame.addCiv(testGame.ruleset.nations.getValue("Egypt"))
         testGame.addCity(original, testGame.getTile(-5, -5))

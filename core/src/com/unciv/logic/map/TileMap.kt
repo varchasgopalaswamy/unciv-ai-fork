@@ -690,54 +690,14 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
     ): MapUnit? {
         val unit = baseUnit.newMapUnit(civInfo, unitId)
 
-        fun getPassableNeighbours(tile: Tile) =
-                tile.neighbors.filter { unit.movement.canPassThrough(it) }
-
         // both the civ name and actual civ need to be in here in order to calculate the canMoveTo...Darn
         unit.assignOwner(civInfo, updateCivInfo = false)
         // remember our first owner
         unit.originalOwner = civInfo.civID
 
-        var unitToPlaceTile: Tile? = null
-        // try to place at the original point (this is the most probable scenario)
-        val currentTile = get(position)
-        unit.currentTile = currentTile  // temporary
+        unit.currentTile = get(position)
         unit.cache.state = GameContext(unit)
-        if (unit.movement.canMoveTo(currentTile)) unitToPlaceTile = currentTile
-
-        // if it's not suitable, try to find another tile nearby
-        if (unitToPlaceTile == null) {
-            class TileCandidates(
-                val primary: MutableList<Tile> = mutableListOf(),
-                val secondary: MutableList<Tile> = mutableListOf()
-            ) {
-                constructor(isRestrictedLandUnit: Boolean, tiles: Iterable<Tile>) : this() {
-                    if (!isRestrictedLandUnit) {
-                        primary.addAll(tiles)
-                    }
-                    else for (tile in tiles)
-                        if (!isRestrictedLandUnit || tile.isLand) primary += tile
-                        else secondary += tile
-                }
-                val allTiles get() = primary.asSequence() + secondary
-            }
-
-            val isRestrictedLandUnit = unit.baseUnit.isLandUnit && !unit.cache.canMoveOnWater
-            var tryCount = 0
-            val checkedCandidates = mutableSetOf<Tile>()
-            var potentialCandidates = TileCandidates(isRestrictedLandUnit, getPassableNeighbours(currentTile).asIterable())
-            while (unitToPlaceTile == null && tryCount++ < 10) {
-                unitToPlaceTile = potentialCandidates.primary.firstOrNull { unit.movement.canMoveTo(it) } // Land units should prefer to go into land tiles
-                    ?: potentialCandidates.secondary.firstOrNull { unit.movement.canMoveTo(it) }
-                if (unitToPlaceTile != null) continue
-                // if it's not found yet, let's check their neighbours
-                checkedCandidates.addAll(potentialCandidates.allTiles)
-                val newCandidates = potentialCandidates.allTiles
-                    .flatMap { getPassableNeighbours(it).filter { it !in checkedCandidates } }
-                    .toSet()
-                potentialCandidates = TileCandidates(isRestrictedLandUnit, newCandidates)
-            }
-        }
+        val unitToPlaceTile = findUnitPlacementTile(unit, position)
 
         if (unitToPlaceTile == null) {
             civInfo.units.removeUnit(unit, updateCivInfo = false) // since we added it to the civ units in the previous assignOwner
@@ -767,6 +727,59 @@ class TileMap(initialCapacity: Int = 10) : IsPartOfGameInfoSerialization {
         return unit
     }
 
+
+    /** Native placement search without registering a unit, revealing tiles or allocating an id.
+     * [replacing] is ignored only in its own slot, as if it had been removed for an upgrade.
+     */
+    fun findUnitPlacementTile(unit: MapUnit, position: HexCoord, replacing: MapUnit? = null): Tile? {
+        fun getPassableNeighbours(tile: Tile) = tile.neighbors.filter { unit.movement.canPassThrough(it) }
+        fun canPlace(tile: Tile): Boolean {
+            if (unit.baseUnit.isAirUnit() && replacing != null && tile === replacing.currentTile)
+                return unit.movement.canReplaceAirUnitAt(tile, replacing)
+            val occupant = if (unit.isCivilian()) tile.civilianUnit else tile.militaryUnit
+            return unit.movement.canMoveTo(tile, allowSwap = replacing != null && occupant === replacing, includeOtherEscortUnit = false)
+        }
+        var unitToPlaceTile: Tile? = null
+        // try to place at the original point (this is the most probable scenario)
+        val currentTile = get(position)
+        if (canPlace(currentTile)) unitToPlaceTile = currentTile
+
+        // if it's not suitable, try to find another tile nearby
+        if (unitToPlaceTile == null) {
+            class TileCandidates(
+                val primary: MutableList<Tile> = mutableListOf(),
+                val secondary: MutableList<Tile> = mutableListOf()
+            ) {
+                constructor(isRestrictedLandUnit: Boolean, tiles: Iterable<Tile>) : this() {
+                    if (!isRestrictedLandUnit) {
+                        primary.addAll(tiles)
+                    }
+                    else for (tile in tiles)
+                        if (!isRestrictedLandUnit || tile.isLand) primary += tile
+                        else secondary += tile
+                }
+                val allTiles get() = primary.asSequence() + secondary
+            }
+
+            val isRestrictedLandUnit = unit.baseUnit.isLandUnit && !unit.cache.canMoveOnWater
+            var tryCount = 0
+            val checkedCandidates = mutableSetOf<Tile>()
+            var potentialCandidates = TileCandidates(isRestrictedLandUnit, getPassableNeighbours(currentTile).asIterable())
+            while (unitToPlaceTile == null && tryCount++ < 10) {
+                unitToPlaceTile = potentialCandidates.primary.firstOrNull { canPlace(it) } // Land units should prefer to go into land tiles
+                    ?: potentialCandidates.secondary.firstOrNull { canPlace(it) }
+                if (unitToPlaceTile != null) continue
+                // if it's not found yet, let's check their neighbours
+                checkedCandidates.addAll(potentialCandidates.allTiles)
+                val newCandidates = potentialCandidates.allTiles
+                    .flatMap { getPassableNeighbours(it).filter { it !in checkedCandidates } }
+                    .toSet()
+                potentialCandidates = TileCandidates(isRestrictedLandUnit, newCandidates)
+            }
+        }
+
+        return unitToPlaceTile
+    }
 
     /** Strips all units and starting locations from [TileMap] for specified [Player]
      * Operation in place

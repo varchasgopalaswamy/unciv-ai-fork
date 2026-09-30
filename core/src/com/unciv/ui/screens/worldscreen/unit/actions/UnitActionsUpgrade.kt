@@ -60,12 +60,10 @@ object UnitActionsUpgrade {
                 "Upgrade to [${upgradedUnit.name}] ([$goldCostOfUpgrade] gold)"
             else "Upgrade to [${upgradedUnit.name}]\n([$goldCostOfUpgrade] gold, [$newResourceRequirementsString])"
             val useFrequency = getUseFrequency(unit, upgradesTo.second, 120f)
-            // Ordinary same-domain upgrades revalidate the current player, price and placement
-            // when invoked. Free, special and domain-changing effects retain their rules.
+            // Ordinary upgrades revalidate the current player, price and native placement.
+            // Free and special triggered effects retain their separate rules.
             val operations = PlayerUnitEconomyOperations(civInfo)
-            val ordinaryPlayerUpgrade = !isFree && !isSpecial && !isAnywhere && civInfo.isHuman() &&
-                (unit.baseUnit.isLandUnit && upgradedUnit.isLandUnit || unit.baseUnit.isWaterUnit && upgradedUnit.isWaterUnit ||
-                    unit.baseUnit.isAirUnit() && upgradedUnit.isAirUnit())
+            val ordinaryPlayerUpgrade = !isFree && !isSpecial && !isAnywhere && civInfo.isHuman()
             val option = if (ordinaryPlayerUpgrade)
                 operations.upgrades(unit).singleOrNull { it.targetName == upgradedUnit.name }
             else null

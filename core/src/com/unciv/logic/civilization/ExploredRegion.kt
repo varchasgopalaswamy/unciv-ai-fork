@@ -70,8 +70,8 @@ class ExploredRegion : IsPartOfGameInfoSerialization {
 
     fun clone(): ExploredRegion {
         val toReturn = ExploredRegion()
-        toReturn.topLeft = topLeft
-        toReturn.bottomRight = bottomRight
+        toReturn.topLeft = topLeft.cpy()
+        toReturn.bottomRight = bottomRight.cpy()
         return toReturn
     }
 

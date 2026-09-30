@@ -77,8 +77,23 @@ class PlayerCaptureOperations(private val civ: Civilization, private val spectat
         return civ.cities.firstOrNull { it.id == alert.value && it.foundingCivObject != null && it.foundingCivObject !== civ }
     }
 
+    private fun marriedCity(alert: PopupAlert): City? {
+        if (!canRead() || alert.type != AlertType.DiplomaticMarriage || civ.popupAlerts.none { it === alert }) return null
+        return civ.cities.firstOrNull { it.id == alert.value && it.isPuppet }
+    }
+
     /** Reads only an existing decision owned by this player; never dismisses stale alerts. */
     fun captureDecision(alert: PopupAlert): CaptureDecision? = synchronized(civ.gameInfo) {
+        marriedCity(alert)?.let { city ->
+            return@synchronized CaptureDecision(
+                title = "What would you like to do with the city of [${city.name}]?",
+                paragraphs = emptyList(),
+                options = conqueredCityChoices(city).filter {
+                    it.choice in setOf(CaptureChoice.Annex, CaptureChoice.Puppet, CaptureChoice.Destroy)
+                },
+                cityId = city.id,
+            )
+        }
         tradedCity(alert)?.let { city ->
             return@synchronized CaptureDecision(
                 title = "What would you like to do with the city of [${city.name}]?",
@@ -175,6 +190,14 @@ class PlayerCaptureOperations(private val civ: Civilization, private val spectat
                     city.isBeingRazed = true
                 }
                 CaptureChoice.Destroy -> { city.puppetCity(civ); city.destroyCity(overrideSafeties = true) }
+                else -> return@synchronized false
+            }
+        } else if (marriedCity(alert) != null) {
+            val married = marriedCity(alert)!!
+            when (choice) {
+                CaptureChoice.Annex -> married.annexCity()
+                CaptureChoice.Puppet -> { married.isPuppet = true; married.cityStats.update() }
+                CaptureChoice.Destroy -> married.destroyCity(overrideSafeties = true)
                 else -> return@synchronized false
             }
         } else if (tradedCity(alert) != null) {

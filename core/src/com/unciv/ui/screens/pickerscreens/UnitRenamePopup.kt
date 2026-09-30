@@ -17,7 +17,7 @@ class UnitRenamePopup(val screen: BaseScreen, val unit: MapUnit, val actionOnClo
             validate = { it != unit.name },
             actionOnOk = { userInput ->
                 //If the user inputs an empty string, clear the unit instanceName so the base name is used
-                unit.instanceName = if (userInput == "") null else userInput
+                com.unciv.logic.civilization.PlayerUnitManagementOperations(unit.civ).tryRename(unit, userInput)
                 actionOnClose()
             }
         ).open()

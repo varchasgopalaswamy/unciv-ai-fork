@@ -140,19 +140,24 @@ class PlayerUnitEconomyOperationsTest {
     }
 
     @Test
-    fun `upgrade cannot relocate to bypass occupied replacement slot`() {
+    fun `upgrade previews relocation without displacing another unit`() {
         val baseWorker = game.createBaseUnit("Civilian").apply { upgradesTo = "Warrior" }
         val worker = game.addUnit(baseWorker.name, player, tile)
         val before = json().toJson(game.gameInfo)
-        assertFalse(operations.canUpgradeInPlace(worker, "Warrior"))
-        assertNull(operations.tryUpgrade(worker, "Warrior"))
-        assertSame(worker, tile.civilianUnit)
-        assertSame(warrior, tile.militaryUnit)
+        val option = operations.upgrades(worker).single()
+        assertTrue(option.available)
+        assertNotNull(option.confirmation)
+        assertNotEquals(tile.position, option.destination)
         assertEquals(before, json().toJson(game.gameInfo))
+        val upgraded = operations.tryUpgrade(worker, "Warrior")!!
+        assertEquals(option.destination, upgraded.currentTile.position)
+        assertSame(warrior, tile.militaryUnit)
+        assertEquals(worker.id, upgraded.id)
+        assertNull(tile.civilianUnit)
     }
 
     @Test
-    fun `embarked upgrades and land to sea targets are not offered as legal in-place actions`() {
+    fun `embarked upgrades remain blocked while land to sea upgrades use native placement`() {
         prepareUpgrade()
         player.tech.addTechnology("Optics")
         game.setTileTerrain(tile.position, "Coast")
@@ -161,10 +166,16 @@ class PlayerUnitEconomyOperationsTest {
         assertTrue(operations.upgrades(warrior).single().reasons.contains("Embarked units cannot upgrade"))
         assertNull(operations.tryUpgrade(warrior, "Legion"))
         assertEquals(before, json().toJson(game.gameInfo))
+        player.tech.addTechnology("Sailing")
         val baseUnit = game.createBaseUnit("Sword").apply { upgradesTo = "Trireme" }
         val custom = game.addUnit(baseUnit.name, player, game.getTile(0, 1))
-        assertTrue(operations.upgrades(custom).isEmpty())
-        assertNull(operations.tryUpgrade(custom, "Trireme"))
+        val option = operations.upgrades(custom).single()
+        assertTrue(option.reasons.toString(), option.available)
+        assertNotNull(option.destination)
+        assertNotEquals(custom.currentTile.position, option.destination)
+        val upgraded = operations.tryUpgrade(custom, "Trireme")!!
+        assertTrue(upgraded.baseUnit.isWaterUnit)
+        assertEquals(option.destination, upgraded.currentTile.position)
     }
 
     @Test

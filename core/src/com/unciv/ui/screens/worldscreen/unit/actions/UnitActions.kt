@@ -5,7 +5,6 @@ import com.unciv.UncivGame
 import com.unciv.logic.civilization.PlayerUnitEconomyOperations
 import com.unciv.logic.civilization.PlayerUnitOrders
 import com.unciv.logic.civilization.PlayerUnitOrders.Order
-import com.unciv.logic.civilization.diplomacy.DiplomaticModifiers
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.UnitAction
@@ -331,35 +330,11 @@ object UnitActions {
     }
 
     private fun getGiftActions(unit: MapUnit, tile: Tile) = sequence {
-        val recipient = tile.getOwner()
-        // We need to be in another civs territory.
-        if (recipient == null || recipient.isCurrentPlayer()) return@sequence
-
-        if (recipient.isCityState) {
-            val operations = com.unciv.logic.civilization.PlayerCityStateOperations(unit.civ)
-            val option = operations.giftOption(unit) ?: return@sequence
-            yield(UnitAction(UnitActionType.GiftUnit, 5f, action = {
-                if (operations.tryGiftUnit(unit)) GUI.setUpdateWorldOnNextRender()
-            }.takeIf { option.available }))
-            return@sequence
-        }
-        // If gifting to major civ they need to be friendly
-        else if (!tile.isFriendlyTerritory(unit.civ)) return@sequence
-
-        // Transported units can't be gifted
-        if (unit.isTransported) return@sequence
-
-        if (!unit.hasMovement()) {
-            yield(UnitAction(UnitActionType.GiftUnit, 1f, action = null))
-            return@sequence
-        }
-
-        val giftAction = {
-            recipient.getDiplomacyManager(unit.civ)!!.addModifier(DiplomaticModifiers.GaveUsUnits, 5f)
-            unit.gift(recipient)
-            GUI.setUpdateWorldOnNextRender()
-        }
-        yield(UnitAction(UnitActionType.GiftUnit, 5f, action = giftAction))
+        val operations = com.unciv.logic.civilization.PlayerUnitManagementOperations(unit.civ)
+        val option = operations.gift(unit) ?: return@sequence
+        yield(UnitAction(UnitActionType.GiftUnit, if (option.available) 5f else 1f, action = {
+            if (operations.tryGift(unit)) GUI.setUpdateWorldOnNextRender()
+        }.takeIf { option.available }))
     }
 
     private suspend fun SequenceScope<UnitAction>.addAutomateActions(unit: MapUnit) {

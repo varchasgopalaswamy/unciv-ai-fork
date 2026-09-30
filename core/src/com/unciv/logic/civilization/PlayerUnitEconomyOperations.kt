@@ -11,9 +11,8 @@ import java.util.Collections
 
 /** Validated ordinary land, naval and aircraft upgrades, pillaging and disbanding.
  *
- * Paid upgrades replace a unit on its current tile, retaining its identity and
- * statistics through the normal upgrade manager. Domain-changing upgrades and
- * upgrades requiring relocation remain separate from these in-place operations.
+ * Paid upgrades retain identity and statistics through the normal upgrade manager.
+ * A read-only native placement search covers both in-place and relocating upgrades.
  * Options contain detached public rule descriptions and the owning player's costs.
  */
 class PlayerUnitEconomyOperations(private val civ: Civilization, private val spectatorMode: Boolean = false) {
@@ -31,6 +30,7 @@ class PlayerUnitEconomyOperations(private val civ: Civilization, private val spe
         val available: Boolean,
         val reasons: List<String>,
         val confirmation: String? = null,
+        val destination: com.unciv.logic.map.HexCoord? = null,
     )
 
     data class PillageOption(
@@ -58,27 +58,16 @@ class PlayerUnitEconomyOperations(private val civ: Civilization, private val spe
     private fun targets(unit: MapUnit): List<BaseUnit> {
         val names = unit.baseUnit.getMatchingUniques(UniqueType.CanUpgrade, unit.cache.state).map { it.params[0] }.toList() +
             listOfNotNull(unit.baseUnit.upgradesTo)
-        return names.map(civ::getEquivalentUnit).distinctBy { it.name }.filter {
-            it.name != unit.name && (unit.baseUnit.isLandUnit && it.isLandUnit || unit.baseUnit.isWaterUnit && it.isWaterUnit ||
-                unit.baseUnit.isAirUnit() && it.isAirUnit())
-        }
+        return names.map(civ::getEquivalentUnit).distinctBy { it.name }.filter { it.name != unit.name }
     }
 
-    /** Checks only the replacement's ability to occupy this already-visible tile.
-     * No registration, unit-id allocation, exploration or placement search occurs.
-     */
-    fun canUpgradeInPlace(unit: MapUnit, targetName: String): Boolean {
-        if (!canInspect(unit)) return false
-        val target = targets(unit).singleOrNull { it.name == targetName } ?: return false
+    fun upgradeDestination(unit: MapUnit, targetName: String): com.unciv.logic.map.tile.Tile? {
+        if (!canInspect(unit)) return null
+        val target = targets(unit).singleOrNull { it.name == targetName } ?: return null
         val replacement = target.newMapUnit(civ, unit.id)
         replacement.currentTile = unit.currentTile
         replacement.cache.state = GameContext(replacement)
-        if (replacement.baseUnit.isAirUnit()) return replacement.movement.canReplaceAirUnitAt(unit.currentTile, unit)
-        // The old unit will be removed first. Never ignore a different unit's slot,
-        // including civilian-to-military upgrades on an escorted tile.
-        val occupant = if (replacement.isCivilian()) unit.currentTile.civilianUnit else unit.currentTile.militaryUnit
-        if (occupant != null && occupant !== unit) return false
-        return replacement.movement.canMoveTo(unit.currentTile, allowSwap = true, includeOtherEscortUnit = false)
+        return civ.gameInfo.tileMap.findUnitPlacementTile(replacement, unit.currentTile.position, unit)
     }
 
     fun upgrades(unit: MapUnit): List<UpgradeOption> {
@@ -95,7 +84,8 @@ class PlayerUnitEconomyOperations(private val civ: Civilization, private val spe
             if (unit.currentTile.getOwner() !== civ) reasons.add("The unit must be in your territory")
             if (unit.isEmbarked()) reasons.add("Embarked units cannot upgrade")
             if (civ.gold < cost) reasons.add("Not enough gold")
-            if (!canUpgradeInPlace(unit, target.name)) reasons.add("The upgraded unit cannot remain on this tile")
+            val destination = upgradeDestination(unit, target.name)
+            if (destination == null) reasons.add("No tile is available for the upgraded unit")
             if (!unit.upgrade.canUpgrade(target)) {
                 reasons.addAll(target.getRejectionReasons(civ, additionalResources = unit.getResourceRequirementsPerTurn())
                     .filterNot { it.isConstructionRejection() || it.type == RejectionReasonType.Obsoleted }
@@ -103,7 +93,9 @@ class PlayerUnitEconomyOperations(private val civ: Civilization, private val spe
             }
             UpgradeOption(target.name, title, target.getShortDescription(), target.strength, target.rangedStrength,
                 target.movement, target.range, immutable(target.requiredTechs().toList()), cost,
-                Collections.unmodifiableMap(LinkedHashMap(resources)), reasons.isEmpty(), immutable(reasons.distinct()))
+                Collections.unmodifiableMap(LinkedHashMap(resources)), reasons.isEmpty(), immutable(reasons.distinct()),
+                confirmation = if (destination != null && destination !== unit.currentTile) "The upgraded unit will relocate to another tile." else null,
+                destination = destination?.position)
         })
     }
 
@@ -111,10 +103,9 @@ class PlayerUnitEconomyOperations(private val civ: Civilization, private val spe
         val option = upgrades(unit).singleOrNull { it.targetName == targetName && it.available } ?: return@synchronized null
         val target = civ.gameInfo.ruleset.units.getValue(option.targetName)
         val id = unit.id
-        val tile = unit.currentTile
         unit.upgrade.performUpgrade(target, isFree = false, goldCostOfUpgrade = option.goldCost)
-        checkNotNull(civ.units.getCivUnits().singleOrNull { it.id == id && it.baseUnit === target && it.currentTile === tile }) {
-            "Validated in-place upgrade failed"
+        checkNotNull(civ.units.getCivUnits().singleOrNull { it.id == id && it.baseUnit === target }) {
+            "Validated upgrade failed"
         }
     }
 

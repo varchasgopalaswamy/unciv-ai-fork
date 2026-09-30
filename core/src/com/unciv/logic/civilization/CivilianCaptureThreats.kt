@@ -33,16 +33,16 @@ class CivilianCaptureThreats(private val observer: Civilization) {
 
     /** A same-tile military escort or friendly city prevents an unopposed capture. */
     @Readonly
-    fun protectedAt(unit: MapUnit, destination: Tile): Boolean =
+    fun protectedAt(unit: MapUnit, destination: Tile, preserveEscort: Boolean = true): Boolean =
         !unit.isCivilian() ||
-            unit.isEscorting() && unit.getOtherEscortUnit()?.isMilitary() == true ||
+            preserveEscort && unit.isEscorting() && unit.getOtherEscortUnit()?.isMilitary() == true ||
             destination.militaryUnit?.civ === observer ||
             destination.isCityCenter() && destination.getOwner() === observer
 
     /** Unknown terrain is speculative; hidden units never change an estimate. */
     @Readonly @Suppress("purity") // Lazy path cache is local to this observation, not game state.
-    fun at(unit: MapUnit, destination: Tile): List<Threat> {
-        if (protectedAt(unit, destination)) return emptyList()
+    fun at(unit: MapUnit, destination: Tile, preserveEscort: Boolean = true): List<Threat> {
+        if (protectedAt(unit, destination, preserveEscort)) return emptyList()
         return enemies.mapNotNull { enemy ->
             val reachable = paths.getValue(enemy)
             if (destination !in reachable || !enemy.movement.canMoveTo(

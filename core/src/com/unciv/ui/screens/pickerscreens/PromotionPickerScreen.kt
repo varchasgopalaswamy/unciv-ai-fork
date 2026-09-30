@@ -217,12 +217,7 @@ class PromotionPickerScreen private constructor(
     // going to re-use this bit of code 2 time so turn it into a funtion
     private fun checkSaveUnitPromotion() {
         if (!saveUnitPromotion)  return
-        val unitCurrentCity = unit.currentTile.getCity()
-        if (unitCurrentCity != null) {
-            // If you are clicked the save baseUnit promotion, you want the next baseUnit to have the same promotion.
-            unitCurrentCity.unitShouldUseSavedPromotion[unit.baseUnit.name] = true
-            unitCurrentCity.unitToPromotions[unit.baseUnit.name] = unit.promotions
-        }
+        com.unciv.logic.civilization.PlayerUnitManagementOperations(unit.civ).trySavePromotions(unit)
     }
     
     private fun getButton(tree: PromotionTree, node: PromotionTree.PromotionNode) : PromotionButton {

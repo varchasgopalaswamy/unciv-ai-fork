@@ -17,7 +17,7 @@ import java.util.Collections
 class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode: Boolean = false) {
     enum class Order {
         FORTIFY, FORTIFY_UNTIL_HEALED, SLEEP, SLEEP_UNTIL_HEALED, SKIP, WAKE,
-        EXPLORE, STOP_EXPLORATION, AUTOMATE, STOP_AUTOMATION, ESCORT, STOP_ESCORT
+        EXPLORE, STOP_EXPLORATION, AUTOMATE, STOP_AUTOMATION, ESCORT, STOP_ESCORT, GUARD, SET_UP
     }
 
     data class Status(
@@ -100,8 +100,16 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
                     add("This sleep order is already active")
             }
             Order.SKIP -> if (!unit.due) add("Already skipped this turn")
-            Order.WAKE -> if (!unit.isFortified() && !unit.isSleeping() && unit.due)
+            Order.WAKE -> if (!unit.isFortified() && !unit.isSleeping() && !unit.isGuarding() && unit.due)
                 add("The unit is already awake and due")
+            Order.GUARD -> {
+                if (!unit.hasUnique(UniqueType.WithdrawsBeforeMeleeCombat)) add("This unit has no melee withdrawal ability")
+                if (unit.isGuarding()) add("Already guarding")
+            }
+            Order.SET_UP -> {
+                if (!unit.hasUnique(UniqueType.MustSetUp) || unit.isEmbarked()) add("This unit cannot set up here")
+                if (unit.isSetUpForSiege()) add("Already set up")
+            }
             Order.EXPLORE -> {
                 if (unit.baseUnit.isAirUnit()) add("Air units cannot explore automatically")
                 if (unit.isExploring()) add("Already exploring")
@@ -131,7 +139,7 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
             Order.SKIP -> unit.due = false
             Order.WAKE -> {
                 // Undoing Skip must not cancel an unrelated worker, movement or setup order.
-                if (unit.isFortified() || unit.isSleeping()) unit.action = null
+                if (unit.isFortified() || unit.isSleeping() || unit.isGuarding()) unit.action = null
                 unit.due = true
             }
             Order.EXPLORE -> {
@@ -144,11 +152,13 @@ class PlayerUnitOrders(private val civ: Civilization, private val spectatorMode:
                 UnitAutomation.automateUnitMoves(unit)
             }
             Order.STOP_AUTOMATION -> {
-                unit.action = null
-                unit.automated = false
+                if (unit.isAutomatingRoadConnection()) com.unciv.logic.automation.unit.RoadToAutomation(civ).stopAndCleanAutomation(unit)
+                else { unit.action = null; unit.automated = false }
             }
             Order.ESCORT -> unit.startEscorting()
             Order.STOP_ESCORT -> unit.stopEscorting()
+            Order.GUARD -> unit.action = UnitActionType.Guard.value
+            Order.SET_UP -> { unit.action = UnitActionType.SetUp.value; unit.useMovementPoints(1f) }
         }
         true
     }

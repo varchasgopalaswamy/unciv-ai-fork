@@ -5,7 +5,6 @@ import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.unciv.Constants
 import com.unciv.UncivGame
-import com.unciv.logic.city.City
 import com.unciv.logic.civilization.AlertType
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.civilization.CaptureChoice
@@ -18,7 +17,6 @@ import com.unciv.logic.civilization.PlayerFriendshipOperations
 import com.unciv.logic.civilization.PopupAlert
 import com.unciv.logic.civilization.diplomacy.*
 import com.unciv.logic.map.mapunit.MapUnit
-import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.translations.fillPlaceholders
 import com.unciv.models.translations.tr
 import com.unciv.ui.audio.MusicMood
@@ -78,7 +76,6 @@ class AlertPopup(
     private val stageWidth get() = worldScreen.stage.width
     private val stageHeight get() = worldScreen.stage.height
     @Readonly private fun getCiv(civName: String) = gameInfo.getCivilization(civName)
-    @Readonly private fun getCity(cityId: String) = gameInfo.getCities().first { it.id == cityId }
     //endregion
 
     // This redirects all addCloseButton uses with only text and no action to accept the space key
@@ -226,27 +223,7 @@ class AlertPopup(
 
     private fun addRejectingDemand(): Boolean = addDiplomaticDecision()
 
-    private fun addDiplomaticMarriage() {
-        val city = getCity(popupAlert.value)
-        addGoodSizedLabel(city.name.tr() + ": " + "What would you like to do with the city?".tr(), Constants.headingFontSize) // Add name because there might be several cities
-            .padBottom(20f).row()
-        val marryingCiv = gameInfo.getCurrentPlayerCivilization()
-
-        if (marryingCiv.isOneCityChallenger()) {
-            addDestroyOption {
-                city.destroyCity(overrideSafeties = true)
-            }
-        } else {
-            val mayAnnex = !marryingCiv.hasUnique(UniqueType.MayNotAnnexCities)
-            addAnnexOption(city, mayAnnex) {}
-            addSeparator()
-
-            addPuppetOption(mayAnnex) {
-                city.isPuppet = true
-                city.cityStats.update()
-            }
-        }
-    }
+    private fun addDiplomaticMarriage() = addCityConquered()
 
     private fun addFirstContact(): Boolean {
         val content = PlayerOperations(viewingCiv).informationalPopupContent(popupAlert) ?: return false
@@ -386,53 +363,6 @@ class AlertPopup(
     private fun addLeaderName(civInfo: Civilization) {
         add(LeaderIntroTable(civInfo))
         addSeparator().padBottom(SEPARATOR_LINE_TO_TEXT_PADDING)
-    }
-
-    private fun addDestroyOption(destroyAction: () -> Unit) {
-        val button = "Destroy".toTextButton()
-        button.onActivation {
-            destroyAction()
-            close()
-        }
-        button.keyShortcuts.add('d')
-        add(button).row()
-        addGoodSizedLabel("Destroying the city instantly razes the city to the ground.").row()
-    }
-
-    private fun addAnnexOption(city: City, mayAnnex: Boolean, annexAction: () -> Unit) {
-        val button = "Annex".toTextButton()
-        button.apply {
-            if (!mayAnnex) disable() else {
-                button.onActivation {
-                    annexAction()
-                    city.annexCity()
-                    close()
-                }
-                button.keyShortcuts.add('a')
-            }
-        }
-        add(button).row()
-        if (mayAnnex) {
-            addGoodSizedLabel("Annexed cities become part of your regular empire.").row()
-            addGoodSizedLabel("Their citizens generate 2x the unhappiness, unless you build a courthouse.").row()
-        } else {
-            addGoodSizedLabel("Your civilization may not annex this city.").row()
-        }
-
-    }
-
-    private fun addPuppetOption(mayAnnex: Boolean, puppetAction: () -> Unit) {
-        val button = "Puppet".toTextButton()
-        button.onActivation {
-            puppetAction()
-            close()
-        }
-        button.keyShortcuts.add('p')
-        add(button).row()
-        addGoodSizedLabel("Puppeted cities do not increase your tech or policy cost.").row()
-        addGoodSizedLabel("You have no control over the the production of puppeted cities.").row()
-        addGoodSizedLabel("Puppeted cities also generate 25% less Science and Culture.").row()
-        if (mayAnnex) addGoodSizedLabel("A puppeted city can be annexed at any time.").row()
     }
 
     /** Returns if event was triggered correctly */

@@ -41,6 +41,10 @@ class UnitUniquesTests {
             isPlayer = true
         )
 
+        game.gameInfo.currentPlayer = mainCiv.civID
+        game.gameInfo.currentPlayerCiv = mainCiv
+        mainCiv.diplomacyFunctions.makeCivilizationsMeet(cityState)
+
         val unitTile = game.getTile(1,0)
         cityStateCapital.expansion.takeOwnership(unitTile)
 
@@ -67,6 +71,8 @@ class UnitUniquesTests {
 
         game.makeHexagonalMap(1)
         val civ = game.addCiv(isPlayer = true)
+        game.gameInfo.currentPlayer = civ.civID
+        game.gameInfo.currentPlayerCiv = civ
         val centerTile = game.getTile(HexCoord.Zero)
         val capital = game.addCity(civ, centerTile)
 

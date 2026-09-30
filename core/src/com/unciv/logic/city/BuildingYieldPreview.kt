@@ -1,6 +1,7 @@
 package com.unciv.logic.city
 
 import com.unciv.logic.GameInfo
+import com.unciv.logic.copyForPreview
 import com.unciv.logic.civilization.Civilization
 import com.unciv.models.ruleset.Building
 import com.unciv.models.ruleset.PerpetualConstruction
@@ -31,23 +32,7 @@ class BuildingYieldPreview(private val source: GameInfo) {
 
     data class Comparison(val before: Yields, val after: Yields)
 
-    private val game by lazy {
-        source.clone().also { copy ->
-            copy.gameParameters = source.gameParameters.clone()
-            copy.gameParameters.godMode = source.gameParameters.godMode
-            copy.tileMap.mapParameters = source.tileMap.mapParameters.clone()
-            // Loading an empty queue can invoke production automation. A preview
-            // does not choose construction or consume randomness on its behalf.
-            for (civ in copy.civilizations) for (city in civ.cities) {
-                city.tiles = HashSet(city.tiles)
-                city.workedTiles = HashSet(city.workedTiles)
-                city.lockedTiles = HashSet(city.lockedTiles)
-                if (city.cityConstructions.constructionQueue.isEmpty())
-                    city.cityConstructions.constructionQueue.add(PerpetualConstruction.Idle.name)
-            }
-            copy.setTransients()
-        }
-    }
+    private val game by lazy { source.copyForPreview() }
 
     private val results = HashMap<Pair<String, String>, Comparison>()
 

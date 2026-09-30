@@ -14,6 +14,44 @@ class PlayerUnitOperations(private val civ: Civilization, private val spectatorM
     /** Turn stops and costs are estimates: discoveries, embarkation and other units can change them. */
     data class RoutePreview(val destination: Tile, val turns: List<MovePreview>)
 
+    fun swapDestinations(unit: MapUnit): List<Tile> = synchronized(civ.gameInfo) {
+        if (!owns(unit) || spectatorMode) emptyList() else
+            Collections.unmodifiableList(unit.movement.getUnitSwappableTiles().toList())
+    }
+
+    fun trySwap(unit: MapUnit, destination: Tile): Boolean = synchronized(civ.gameInfo) {
+        if (!PlayerOperations(civ, spectatorMode).canAct() || destination !in swapDestinations(unit)) return@synchronized false
+        unit.movement.swapMoveToTile(destination, keepEscorting = true)
+        if (unit.isExploring() || unit.isMoving()) unit.action = null
+        true
+    }
+
+    fun canConnectRoad(unit: MapUnit): Boolean {
+        if (!owns(unit) || spectatorMode) return false
+        val best = civ.tech.getBestRoadAvailable()
+        if (best == com.unciv.logic.map.tile.RoadStatus.None) return false
+        return com.unciv.ui.screens.worldscreen.unit.actions.UnitActionModifiers
+            .getUsableUnitActionUniques(unit, com.unciv.models.ruleset.unique.UniqueType.BuildImprovements).any {
+                it.params[0] == "Land" || it.params[0] in com.unciv.Constants.all ||
+                    it.params[0] == "Road" || (it.params[0] == "Railroad" && best == com.unciv.logic.map.tile.RoadStatus.Railroad)
+            }
+    }
+
+    fun roadPath(unit: MapUnit, destination: Tile): List<Tile>? = synchronized(civ.gameInfo) {
+        if (!canConnectRoad(unit) || destination.tileMap !== civ.gameInfo.tileMap) null
+        else unit.movement.getRoadPath(destination)?.let { Collections.unmodifiableList(it.toList()) }
+    }
+
+    fun tryConnectRoad(unit: MapUnit, destination: Tile): Boolean = synchronized(civ.gameInfo) {
+        if (!PlayerOperations(civ, spectatorMode).canAct() || roadPath(unit, destination) == null) return@synchronized false
+        unit.automatedRoadConnectionDestination = destination.position
+        unit.automatedRoadConnectionPath = null
+        unit.action = com.unciv.models.UnitActionType.ConnectRoad.value
+        unit.automated = true
+        com.unciv.logic.automation.unit.UnitAutomation.automateUnitMoves(unit)
+        true
+    }
+
     @Readonly
     fun owns(unit: MapUnit): Boolean = unit.civ === civ && !unit.isDestroyed &&
         civ.units.getCivUnits().any { it === unit } && unit.currentTile.getUnits().any { it === unit }
