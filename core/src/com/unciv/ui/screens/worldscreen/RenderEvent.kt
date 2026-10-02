@@ -34,7 +34,7 @@ class RenderEvent(
     init {
         defaults().fillX().center().pad(5f)
 
-        val gameContext = GameContext(gameInfo.currentPlayerCiv, unit = unit)
+        val gameContext = GameContext(worldScreen.selectedGameView.civView.getCiv(), unit = unit)
         val choices = event.getMatchingChoices(gameContext)
         isValid = choices != null
         if (isValid) {
@@ -58,8 +58,9 @@ class RenderEvent(
 
         val button = choice.text.toTextButton()
         button.onActivation {
+            if (!worldScreen.canChangeState) return@onActivation
             onChoice(choice)
-            choice.triggerChoice(gameInfo.currentPlayerCiv, unit)
+            choice.triggerChoice(worldScreen.selectedGameView.civView.getCiv(), unit)
         }
         val key = KeyCharAndCode.parse(choice.keyShortcut)
         if (key != KeyCharAndCode.UNKNOWN) {

@@ -822,8 +822,10 @@ class Civilization : IsPartOfGameInfoSerialization {
     fun getLeaderDisplayName(): String {
         val severalHumans = gameInfo.civilizations.count { it.playerType == PlayerType.Human } > 1
         val online = gameInfo.gameParameters.isOnlineMultiplayer
+        val managedLabel = if (UncivGame.isCurrentInitialized()) UncivGame.Current.managedSession?.controllerLabel(civID) else null
         return nation.getLeaderDisplayName(leaderTitle).tr(hideIcons = true) +
             when {
+                managedLabel != null -> " ($managedLabel)"
                 !online && !severalHumans -> ""  // offline single player will know everybody else is AI
                 playerType == PlayerType.AI -> " (${"AI".tr()})"
                 online -> " (${"Human".tr()} - ${"Multiplayer".tr()})"

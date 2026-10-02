@@ -99,10 +99,12 @@ class MapUnitView internal constructor(
         PlayerUnitOperations(viewer, spectatorMode).trySetDestination(unit, tileView.unwrap())
 
     fun trySwapMoveToTile(tileView: TileView, keepEscorting: Boolean = false): Boolean {
+        if (!PlayerOperations(viewer, spectatorMode).canAct() || !PlayerUnitOperations(viewer, spectatorMode).owns(unit)) return false
         unit.movement.swapMoveToTile(tileView.unwrap(), keepEscorting)
         return true
     }
     fun tryResetAction(): Boolean {
+        if (!PlayerOperations(viewer, spectatorMode).canAct() || !PlayerUnitOperations(viewer, spectatorMode).owns(unit)) return false
         unit.action = null
         return true
     }
@@ -115,6 +117,7 @@ class MapUnitView internal constructor(
         return true
     }
     fun trySetMoveToAction(tileView: TileView): Boolean {
+        if (!PlayerOperations(viewer, spectatorMode).canAct() || !PlayerUnitOperations(viewer, spectatorMode).owns(unit)) return false
         val position = tileView.position()
         unit.action = "moveTo ${position.x},${position.y}"
         return true

@@ -187,6 +187,15 @@ class VictoryScreen(
     private fun displayWonOrLost(vararg descriptions: String) {
         descriptionLabel.setText(descriptions.joinToString("\n") { it.tr() })
 
+        if (game.managedSession != null) {
+            rightSideButton.setText("Exit".tr())
+            rightSideButton.enable()
+            rightSideButton.onClick { game.managedSession?.exit() }
+            closeButton.setText("Close".tr())
+            closeButton.onClick { game.popScreen() }
+            return
+        }
+
         rightSideButton.setText("Start new game".tr())
         rightSideButton.enable()
         rightSideButton.onClick {

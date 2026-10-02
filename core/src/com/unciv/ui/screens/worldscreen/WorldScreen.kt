@@ -18,7 +18,7 @@ import com.unciv.logic.map.HexCoord
 import com.unciv.logic.multiplayer.MultiplayerGameUpdated
 import com.unciv.logic.multiplayer.storage.FileStorageRateLimitReached
 import com.unciv.logic.multiplayer.storage.MultiplayerAuthException
-import com.unciv.logic.trade.TradeEvaluation
+import com.unciv.logic.trade.TradeOperations
 import com.unciv.models.TutorialTrigger
 import com.unciv.models.metadata.GameSetupInfo
 import com.unciv.models.ruleset.Event
@@ -97,6 +97,7 @@ class WorldScreen(
 
     /** Indicates it's the player's ([viewingCiv]) turn */
     var isPlayersTurn = viewingCiv.isCurrentPlayer()
+        get() = field && (game.managedSession?.canChangeState(gameInfo) != false)
         internal set     // only this class is allowed to make changes
     
     /** Indicates that a game failed to upload, and needs to be uploaded */
@@ -264,6 +265,7 @@ class WorldScreen(
     }
 
     fun openNewGameScreen() {
+        if (game.managedSession != null) return
         val newGameSetupInfo = GameSetupInfo(gameInfo)
         newGameSetupInfo.mapParameters.reseed()
         val newGameScreen = NewGameScreen(newGameSetupInfo)
@@ -271,6 +273,7 @@ class WorldScreen(
     }
 
     fun openSaveGameScreen() {
+        if (game.managedSession != null) return
         // See #10353 - we don't support locally saving an online multiplayer game
         if (gameInfo.gameParameters.isOnlineMultiplayer) return
         game.pushScreen{ SaveGameScreen(gameInfo) }
@@ -289,10 +292,12 @@ class WorldScreen(
         globalShortcuts.add(KeyboardBinding.VictoryScreen) { game.pushScreen{ VictoryScreen(this) } }
         globalShortcuts.add(KeyboardBinding.EmpireOverviewStats) { openEmpireOverview(EmpireOverviewCategories.Stats) }
         globalShortcuts.add(KeyboardBinding.EmpireOverviewResources) { openEmpireOverview(EmpireOverviewCategories.Resources) }
-        globalShortcuts.add(KeyboardBinding.QuickSave) { QuickSave.save(gameInfo, this) }
-        globalShortcuts.add(KeyboardBinding.QuickLoad) { QuickSave.load(this) }
+        if (game.managedSession == null) {
+            globalShortcuts.add(KeyboardBinding.QuickSave) { QuickSave.save(gameInfo, this) }
+            globalShortcuts.add(KeyboardBinding.QuickLoad) { QuickSave.load(this) }
+        }
         globalShortcuts.add(KeyboardBinding.ViewCapitalCity) {
-            val capital = gameInfo.getCurrentPlayerCivilization().getCapital()
+            val capital = viewingCiv.getCapital()
             if (capital != null && !mapHolder.setCenterPosition(capital.location.toHexCoord()))
                 game.pushScreen{ CityScreen(selectedGameView.getCityView(capital)) }
         }
@@ -300,7 +305,8 @@ class WorldScreen(
             openOptionsPopup { nextTurnButton.update() }
         }
         globalShortcuts.add(KeyboardBinding.SaveGame) { openSaveGameScreen() }    //   Save
-        globalShortcuts.add(KeyboardBinding.LoadGame) { game.pushScreen{ LoadGameScreen() } }    //   Load
+        if (game.managedSession == null)
+            globalShortcuts.add(KeyboardBinding.LoadGame) { game.pushScreen{ LoadGameScreen() } }
         globalShortcuts.add(KeyboardBinding.QuitGame) { game.popScreen() }    //   WorldScreen is the last screen, so this quits
         globalShortcuts.add(KeyboardBinding.NewGame) { openNewGameScreen() }
         globalShortcuts.add(KeyboardBinding.MusicPlayer) {
@@ -455,8 +461,7 @@ class WorldScreen(
                 viewingCiv.tradeRequests.isNotEmpty() -> {
                     // In the meantime this became invalid, perhaps because we accepted previous trades
                     for (tradeRequest in viewingCiv.tradeRequests.toList())
-                        if (!TradeEvaluation().isTradeValid(tradeRequest.trade, viewingCiv,
-                                gameInfo.getCivilization(tradeRequest.requestingCiv)))
+                        if (TradeOperations(viewingCiv, gameInfo.getCivilization(tradeRequest.requestingCiv)).invalidReason(tradeRequest.trade) != null)
                             viewingCiv.tradeRequests.remove(tradeRequest)
 
                     if (viewingCiv.tradeRequests.isNotEmpty()) // if a valid one still exists
@@ -518,10 +523,10 @@ class WorldScreen(
         }
         displayTutorial(TutorialTrigger.AfterConquering) { viewingCiv.cities.any { it.hasJustBeenConquered } }
 
-        displayTutorial(TutorialTrigger.InjuredUnits) { gameInfo.getCurrentPlayerCivilization().units.getCivUnits().any { it.health < 100 } }
+        displayTutorial(TutorialTrigger.InjuredUnits) { viewingCiv.units.getCivUnits().any { it.health < 100 } }
 
         displayTutorial(TutorialTrigger.Workers) {
-            gameInfo.getCurrentPlayerCivilization().units.getCivUnits().any {
+            viewingCiv.units.getCivUnits().any {
                 it.cache.hasUniqueToBuildImprovements && it.isCivilian() && !it.isGreatPerson()
             }
         }
@@ -606,6 +611,7 @@ class WorldScreen(
     }
 
     fun nextTurn() {
+        game.managedSession?.let { it.endTurn(this); return }
         isPlayersTurn = false
         shouldUpdate = true
         val progressBar = NextTurnProgress(nextTurnButton)
@@ -742,11 +748,12 @@ class WorldScreen(
     }
 
     private fun updateAutoPlayStatusButton() {
+        val show = game.settings.autoPlay.showAutoPlayButton && game.managedSession == null
         if (statusButtons.autoPlayStatusButton == null) {
-            if (game.settings.autoPlay.showAutoPlayButton)
+            if (show)
                 statusButtons.autoPlayStatusButton = AutoPlayStatusButton(this, nextTurnButton)
         } else {
-            if (!game.settings.autoPlay.showAutoPlayButton) {
+            if (!show) {
                 statusButtons.autoPlayStatusButton = null
                 autoPlay.stopAutoPlay()
             }
@@ -788,7 +795,7 @@ class WorldScreen(
             update()
             showTutorialsOnNextTurn()
             if (Gdx.input.inputProcessor == null) // Update may have replaced the worldscreen with a GreatPersonPickerScreen etc, so the input would already be set
-                Gdx.input.inputProcessor = stage
+                Gdx.input.inputProcessor = game.managedSession?.input(stage) ?: stage
         }
 
         super.render(delta)

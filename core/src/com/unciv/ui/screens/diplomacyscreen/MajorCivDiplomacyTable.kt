@@ -108,6 +108,10 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
         val peaceOperations = com.unciv.logic.civilization.PlayerPeaceOperations(
             viewingCiv, diplomacyScreen.viewingCivView.spectatorMode)
         negotiatePeaceButton.onClick {
+            if (UncivGame.Current.managedSession?.usesSharedDiplomacy(otherCiv.civID) == true) {
+                diplomacyScreen.setTrade(otherCiv)
+                return@onClick
+            }
             if (diplomacyScreen.isNotPlayersTurn() || peaceOperations.negotiationUnavailableReason(otherCiv) != null)
                 return@onClick
             val tradeTable = diplomacyScreen.setTrade(otherCiv)
@@ -156,6 +160,8 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
         val declareFriendshipButton =
             "Offer Declaration of Friendship ([30] turns)".toTextButton()
         declareFriendshipButton.onClick {
+            if (diplomacyScreen.isNotPlayersTurn()) return@onClick
+            if (UncivGame.Current.managedSession?.let { it.usesSharedDiplomacy(otherCiv.civID) && it.openDiplomacy(otherCiv.civID) } == true) return@onClick
             otherCiv.popupAlerts.add(
                 PopupAlert(
                     AlertType.DeclarationOfFriendship,
@@ -178,7 +184,8 @@ class MajorCivDiplomacyTable(private val diplomacyScreen: DiplomacyScreen) {
                 offerColumnsTable.update()
             }
         }
-        if (diplomacyScreen.isNotPlayersTurn()) tradeButton.disable()
+        if (diplomacyScreen.isNotPlayersTurn() && UncivGame.Current.managedSession?.usesSharedDiplomacy(otherCiv.civID) != true)
+            tradeButton.disable()
         return tradeButton
     }
 

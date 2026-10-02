@@ -59,6 +59,10 @@ object Concurrency {
         functions: List<() -> Any?>,
         parallelize: Boolean = true
     ){
+        if (UncivGame.isCurrentInitialized() && UncivGame.Current.managedSession != null) {
+            functions.forEach { it() }
+            return
+        }
         if (parallelize)
             runBlocking {
                 functions
@@ -101,7 +105,7 @@ fun CoroutineScope.launchCrashHandling(
     name: String? = null,
     block: suspend CoroutineScope.() -> Unit
 ): Job {
-    return launch(addName(context, name)) {
+    return launch(addName(managedContext(context), name)) {
         try {
             block(this)
         } catch (ex: Throwable) {
@@ -124,12 +128,18 @@ fun CoroutineScope.launchOnGLThread(name: String? = null, block: suspend Corouti
 
 /** See [withContext]. Runs on a daemon thread pool. Use this for code that does not necessarily need to finish executing. */
 suspend fun <T> withThreadPoolContext(block: suspend CoroutineScope.() -> T): T = withContext(
-    Dispatcher.DAEMON, block)
+    managedContext(Dispatcher.DAEMON), block)
 /** See [withContext]. Runs on a non-daemon thread pool. Use this if you do something that should always finish if possible, like saving the game. */
 suspend fun <T> withNonDaemonThreadPoolContext(block: suspend CoroutineScope.() -> T): T = withContext(
-    Dispatcher.NON_DAEMON, block)
+    managedContext(Dispatcher.NON_DAEMON), block)
 /** See [withContext]. Runs on the GDX GL thread. Use this for all code that manipulates the GDX UI classes. */
-suspend fun <T> withGLContext(block: suspend CoroutineScope.() -> T): T = withContext(Dispatcher.GL, block)
+suspend fun <T> withGLContext(block: suspend CoroutineScope.() -> T): T = withContext(managedContext(Dispatcher.GL), block)
+
+/** Managed applications keep live game calculations on their owning dispatcher. */
+private fun managedContext(context: CoroutineContext): CoroutineContext =
+    if (UncivGame.isCurrentInitialized())
+        UncivGame.Current.managedSession?.let { context + it.uiContext() } ?: context
+    else context
 
 
 /** Wraps one instance of [Dispatchers], ensuring they are alive when used.

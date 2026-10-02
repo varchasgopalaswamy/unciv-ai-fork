@@ -8,6 +8,7 @@ import com.unciv.logic.civilization.diplomacy.RelationshipLevel
 import com.unciv.logic.trade.Trade
 import com.unciv.logic.trade.TradeEvaluation
 import com.unciv.logic.trade.TradeLogic
+import com.unciv.logic.trade.TradeOperations
 import com.unciv.logic.trade.TradeOffer
 import com.unciv.logic.trade.TradeRequest
 import com.unciv.logic.trade.TradeOfferType
@@ -20,7 +21,7 @@ object TradeAutomation {
         for (tradeRequest in civInfo.tradeRequests.toList()) {
             val otherCiv = civInfo.gameInfo.getCivilization(tradeRequest.requestingCiv)
             // Treat 'no trade' state as if all trades are invalid - thus AIs will not update its "turns to offer"
-            if (!tradeAndChangeState || !TradeEvaluation().isTradeValid(tradeRequest.trade, civInfo, otherCiv)) {
+            if (!tradeAndChangeState || TradeOperations(civInfo, otherCiv).invalidReason(tradeRequest.trade) != null) {
                 tradeRequest.onResponse?.invoke("INVALID", null)
                 continue
             }
@@ -34,7 +35,7 @@ object TradeAutomation {
              */
             civInfo.tradeRequests.remove(tradeRequest)
             if (TradeEvaluation().isTradeAcceptable(tradeLogic.currentTrade, civInfo, otherCiv)) {
-                tradeLogic.acceptTrade()
+                check(TradeOperations(civInfo, otherCiv).tryEnact(tradeLogic.currentTrade))
                 otherCiv.addNotification("[${civInfo.civName}] has accepted your trade request", NotificationCategory.Trade, NotificationIcon.Trade, civInfo.civName)
                 tradeRequest.onResponse?.invoke("ENACTED", null)
             } else {

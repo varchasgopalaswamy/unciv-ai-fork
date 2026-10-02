@@ -21,7 +21,9 @@ class PlayerOperations(private val civ: Civilization, private val spectatorMode:
     @Readonly
     fun canAct(): Boolean = !spectatorMode && civ.isHuman() && civ.isMajorCiv() &&
         !civ.isDefeated() && civ.gameInfo.currentPlayer == civ.civID &&
-        civ.gameInfo.currentPlayerCiv === civ && civ.gameInfo.civilizations.any { it === civ }
+        civ.gameInfo.currentPlayerCiv === civ && civ.gameInfo.civilizations.any { it === civ } &&
+        (!com.unciv.UncivGame.isCurrentInitialized() ||
+            com.unciv.UncivGame.Current.managedSession?.canAct(civ.civID) != false)
 
     fun tryRenameCity(city: City, name: String): Boolean = synchronized(civ.gameInfo) {
         if (!canAct() || city.civ !== civ || civ.cities.none { it === city } || !isValidCityName(name))

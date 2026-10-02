@@ -1,9 +1,8 @@
 package com.unciv.logic.civilization
 
-import com.unciv.Constants
 import com.unciv.logic.civilization.diplomacy.DiplomacyFlags
 import com.unciv.logic.trade.Trade
-import com.unciv.logic.trade.TradeEvaluation
+import com.unciv.logic.trade.TradeOperations
 import com.unciv.logic.trade.TradeLogic
 import com.unciv.logic.trade.TradeOffer
 import com.unciv.logic.trade.TradeOfferType
@@ -21,13 +20,8 @@ data class PeaceTradeOptions(val ourOptions: List<PeaceTradeTerm>, val theirOpti
 /** Always from the inspecting player's perspective: ourOffers are what that player gives. */
 data class PeaceTrade(val ourOffers: List<PeaceTradeTerm>, val theirOffers: List<PeaceTradeTerm>)
 
-/** Validated human peace negotiations using the same offers, request direction and effects as trade UI.
- *
- * This operation set covers mutual peace, gold, gold per turn and tradable luxury/strategic resources.
- * It deliberately refuses to accept or replace requests containing other terms. Rejection remains
- * possible for any owned request. Pending requests are identified by object identity, never by terms.
- * All mutations recheck authority and current quantities while holding the game monitor. Callers
- * must additionally respect their UI input state. The monitor does not protect arbitrary engine writes.
+/** Peace-specific player authority and native queued-request lifecycle.
+ * Complete terms, draft quantities and enactment use the common bilateral trade operations.
  */
 class PlayerPeaceOperations(private val civ: Civilization, private val spectatorMode: Boolean = false) {
     private fun knownPartner(other: Civilization): Boolean = !spectatorMode && !civ.isSpectator() &&
@@ -72,20 +66,7 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
         }
         if (negotiationStateReason(other) != null && !hasIncomingPeace) return@synchronized null
         val logic = TradeLogic(civ, other)
-        fun available(offers: List<TradeOffer>, owner: Civilization): List<PeaceTradeTerm> {
-            val currentResources = owner.getCivResourcesByName()
-            return immutable(offers.map(::term).filter(::supportsTerm).map { term ->
-                // The table's tradable-origin total can still include copies already exported.
-                // Offer only quantities which pass the same current-supply guard as acceptance.
-                if (term.type == TradeOfferType.Luxury_Resource || term.type == TradeOfferType.Strategic_Resource)
-                    term.copy(amount = minOf(term.amount, currentResources[term.name] ?: 0).coerceAtLeast(0))
-                else term
-            })
-        }
-        PeaceTradeOptions(
-            available(logic.ourAvailableOffers, civ),
-            available(logic.theirAvailableOffers, other),
-        )
+        PeaceTradeOptions(immutable(logic.ourAvailableOffers.map(::term)), immutable(logic.theirAvailableOffers.map(::term)))
     }
 
     /** The trade acknowledgement is presentation only; closing it has no additional game effect. */
@@ -121,7 +102,6 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
         val other = counterpart(request) ?: return@synchronized "This trade request is no longer available."
         if (!PlayerOperations(civ, spectatorMode).canAct()) return@synchronized "Only the active human player can respond."
         if (civ.isDefeated() || other.isDefeated()) return@synchronized "A civilization has been defeated."
-        if (!isSupportedTrade(request.trade)) return@synchronized "This request contains unsupported peace terms."
         if (!civ.isAtWarWith(other)) return@synchronized "These civilizations are already at peace."
         if (civ.gameInfo.ruleset.modOptions.hasUnique(UniqueType.DiplomaticRelationshipsCannotChange))
             return@synchronized "Diplomatic relationships cannot change in this game."
@@ -140,7 +120,6 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
     fun counterofferUnavailableReason(request: TradeRequest): String? = synchronized(civ.gameInfo) {
         val other = counterpart(request) ?: return@synchronized "This trade request is no longer available."
         when {
-            !isSupportedTrade(request.trade) -> "This request contains unsupported peace terms."
             other.tradeRequests.any { it.requestingCiv == civ.civID } -> "Retract your existing offer first."
             else -> negotiationUnavailableReason(other)
         }
@@ -168,18 +147,7 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
     fun tryAccept(request: TradeRequest): Boolean = synchronized(civ.gameInfo) {
         if (acceptUnavailableReason(request) != null) return@synchronized false
         val other = counterpart(request) ?: return@synchronized false
-        val logic = TradeLogic(civ, other)
-        logic.currentTrade.set(toTrade(snapshot(request.trade)))
-        // Remove the decision before applying effects; repeated calls cannot transfer gold twice.
-        civ.tradeRequests.remove(request)
-        logic.acceptTrade()
-        // Both directions may contain offers sent on successive turns. Once peace is signed those
-        // alternative peace offers are obsolete; leave unrelated trade requests untouched.
-        civ.tradeRequests.removeAll { it.requestingCiv == other.civID && it.trade.isPeaceTreaty() }
-        other.tradeRequests.removeAll { it.requestingCiv == civ.civID && it.trade.isPeaceTreaty() }
-        other.addNotification("[${civ.civName}] has accepted your trade request", NotificationCategory.Trade,
-            civ.civName, NotificationIcon.Trade)
-        true
+        TradeOperations(civ, other).tryAcceptRequest(request)
     }
 
     fun tryReject(request: TradeRequest): Boolean = synchronized(civ.gameInfo) {
@@ -232,51 +200,12 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
         civ.cache.updateCivResources()
     }
 
-    /** Fresh trade-table maxima are stricter than the AI trade evaluator's 10% gold tolerance.
-     * Gold quantities may be chosen freely in the UI; resource clicks add one copy at a time.
-     * A list is validated before TradeOffersList can merge duplicates or overflow their amounts.
-     */
     private fun validTerms(other: Civilization, trade: PeaceTrade): Boolean {
-        if (!supportedTerms(trade.ourOffers) || !supportedTerms(trade.theirOffers)) return false
-        val logic = TradeLogic(civ, other)
-        fun validSide(terms: List<PeaceTradeTerm>, available: List<TradeOffer>): Boolean = terms.all { offer ->
-            available.any { it.name == offer.name && it.type == offer.type &&
-                offer.duration == it.duration && offer.amount <= it.amount }
-        }
-        return validSide(trade.ourOffers, logic.ourAvailableOffers) &&
-            validSide(trade.theirOffers, logic.theirAvailableOffers) &&
-            TradeEvaluation().isTradeValid(toTrade(trade), civ, other)
+        val native = toTrade(trade)
+        return native.isPeaceTreaty() && TradeOperations(civ, other).invalidReason(native) == null
     }
 
     companion object {
-        fun supportsTerm(term: PeaceTradeTerm): Boolean = when (term.type) {
-            TradeOfferType.Treaty -> term.name == Constants.peaceTreaty
-            TradeOfferType.Gold -> term.name == Constants.flatGold
-            TradeOfferType.Gold_Per_Turn -> term.name == Constants.goldPerTurn
-            TradeOfferType.Luxury_Resource, TradeOfferType.Strategic_Resource -> true
-            else -> false
-        }
-
-        fun isSupportedTrade(trade: Trade): Boolean = supportedTerms(trade.ourOffers.map(::term)) &&
-            supportedTerms(trade.theirOffers.map(::term))
-
-        /** Routes supported categories through validation even if a stale UI draft has invalid
-         * quantities, names, treaty symmetry or durations. Trades using additional features retain
-         * their existing UI path rather than having those terms silently discarded.
-         */
-        fun usesSupportedPeaceTerms(trade: Trade): Boolean {
-            val offers = trade.ourOffers + trade.theirOffers
-            return offers.any { it.type == TradeOfferType.Treaty && it.name == Constants.peaceTreaty } &&
-                offers.all { it.type in setOf(TradeOfferType.Gold, TradeOfferType.Gold_Per_Turn,
-                    TradeOfferType.Luxury_Resource, TradeOfferType.Strategic_Resource) ||
-                    it.type == TradeOfferType.Treaty && it.name == Constants.peaceTreaty }
-        }
-
-        private fun supportedTerms(terms: List<PeaceTradeTerm>): Boolean =
-            terms.isNotEmpty() && terms.all { supportsTerm(it) && it.amount > 0 } &&
-                terms.count { it.type == TradeOfferType.Treaty && it.name == Constants.peaceTreaty && it.amount == 1 } == 1 &&
-                terms.map { it.type to it.name }.toSet().size == terms.size
-
         private fun term(offer: TradeOffer) = PeaceTradeTerm(offer.name, offer.type, offer.amount, offer.duration)
         private fun <T> immutable(values: List<T>): List<T> = Collections.unmodifiableList(ArrayList(values))
         private fun snapshot(trade: Trade) = PeaceTrade(immutable(trade.ourOffers.map(::term)), immutable(trade.theirOffers.map(::term)))

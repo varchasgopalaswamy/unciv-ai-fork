@@ -3,11 +3,10 @@ package com.unciv.ui.screens.worldscreen
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.unciv.UncivGame
-import com.unciv.logic.civilization.NotificationCategory
-import com.unciv.logic.civilization.NotificationIcon
 import com.unciv.logic.civilization.InformationalPopupContent
 import com.unciv.logic.civilization.PlayerPeaceOperations
-import com.unciv.logic.trade.TradeLogic
+import com.unciv.logic.trade.TradeOperations
+import com.unciv.logic.civilization.PlayerOperations
 import com.unciv.logic.trade.TradeOffer
 import com.unciv.logic.trade.TradeOfferType
 import com.unciv.models.translations.tr
@@ -45,7 +44,8 @@ class TradePopup(worldScreen: WorldScreen) : Popup(worldScreen) {
         val nation = requestingCiv.nation
         val trade = tradeRequest.trade
         val peaceOperations = PlayerPeaceOperations(viewingCiv, worldScreen.selectedGameView.spectatorMode)
-        val managedPeace = PlayerPeaceOperations.usesSupportedPeaceTerms(trade)
+        val operations = TradeOperations(viewingCiv, requestingCiv)
+        fun canAct() = PlayerOperations(viewingCiv, worldScreen.selectedGameView.spectatorMode).canAct()
 
 
         val ourResources = viewingCiv.getCivResourcesByName()
@@ -90,33 +90,22 @@ class TradePopup(worldScreen: WorldScreen) : Popup(worldScreen) {
         addGoodSizedLabel(nation.tradeRequest).pad(15f).row()
 
         addButton("Sounds good!", 'y') {
-            if (managedPeace) {
-                if (!peaceOperations.tryAccept(tradeRequest)) return@addButton
-            } else {
-                val tradeLogic = TradeLogic(viewingCiv, requestingCiv)
-                tradeLogic.currentTrade.set(trade)
-                tradeLogic.acceptTrade()
-                requestingCiv.addNotification("[${viewingCiv.civName}] has accepted your trade request", NotificationCategory.Trade, viewingCiv.civName, NotificationIcon.Trade)
-            }
+            if (!canAct() || !operations.tryAcceptRequest(tradeRequest)) return@addButton
             close()
             TradeThanksPopup(leaderIntroTable, worldScreen, peaceOperations.acceptancePopupContent(requestingCiv))
         }.apply {
-            if (managedPeace && peaceOperations.acceptUnavailableReason(tradeRequest) != null) actor.disable()
+            if (!canAct() || operations.invalidReason(trade) != null) actor.disable()
         }.row()
 
         addButton("Not this time.", 'n') {
-            if (managedPeace) {
-                if (!peaceOperations.tryReject(tradeRequest)) return@addButton
-            } else {
-                tradeRequest.decline(viewingCiv)
-                requestingCiv.addNotification("[${viewingCiv.civName}] has denied your trade request", NotificationCategory.Trade, viewingCiv.civName, NotificationIcon.Trade)
-            }
+            if (!peaceOperations.tryReject(tradeRequest)) return@addButton
             close()
             worldScreen.shouldUpdate = true
         }.row()
 
         addButton("How about something else...", 'e') {
-            val draft = if (managedPeace) peaceOperations.tryBeginCounteroffer(tradeRequest) ?: return@addButton else trade
+            if (!canAct() || viewingCiv.tradeRequests.none { it === tradeRequest }) return@addButton
+            val draft = TradeOperations.copy(trade)
             close()
             worldScreen.game.pushScreen {
                 DiplomacyScreen(
@@ -127,7 +116,7 @@ class TradePopup(worldScreen: WorldScreen) : Popup(worldScreen) {
             }
             worldScreen.shouldUpdate = true
         }.apply {
-            if (managedPeace && peaceOperations.counterofferUnavailableReason(tradeRequest) != null) actor.disable()
+            if (!canAct() || operations.initiationReason() != null) actor.disable()
         }.row()
     }
 

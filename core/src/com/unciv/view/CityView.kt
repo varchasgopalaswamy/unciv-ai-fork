@@ -150,7 +150,7 @@ class CityView(city: City,
     @Readonly private fun getTile(tileView: TileView) = tileView.unwrap()
 
     // ACTIONS
-    private fun canChangeState() = city.civ === viewer && viewer.isCurrentPlayer()
+    private fun canChangeState() = city.civ === viewer && com.unciv.logic.civilization.PlayerOperations(viewer, spectatorMode).canAct()
 
     fun tryLockTile(tileView: TileView): Boolean {
         if (!canChangeState()) return false

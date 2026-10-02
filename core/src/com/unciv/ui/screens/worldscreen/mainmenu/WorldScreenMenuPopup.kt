@@ -30,14 +30,15 @@ class WorldScreenMenuPopup(
         worldScreen.autoPlay.stopAutoPlay()
         defaults().fillX()
 
-        val showSave = !worldScreen.gameInfo.gameParameters.isOnlineMultiplayer
+        val managed = worldScreen.game.managedSession
+        val showSave = managed == null && !worldScreen.gameInfo.gameParameters.isOnlineMultiplayer
         val showMusic = worldScreen.game.musicController.isMusicAvailable()
         val showConsole = showSave && expertMode
         val buttonCount = 8 + (if (showSave) 1 else 0) + (if (showMusic) 1 else 0) + (if (showConsole) 1 else 0)
 
         val emptyPrefHeight = this.prefHeight
-        val firstCell = addButton("Main menu") {
-            worldScreen.game.goToMainMenu()
+        val firstCell = addButton(if (managed == null) "Main menu" else "Stop game") {
+            if (managed == null) worldScreen.game.goToMainMenu() else managed.exit()
         }
         singleColumn = worldScreen.isCrampedPortrait() ||
             2 * prefWidth > maxPopupWidth ||  // Very coarse: Assume width of translated "Main menu" is representative
@@ -53,11 +54,11 @@ class WorldScreenMenuPopup(
                 close()
                 worldScreen.openSaveGameScreen()
             }.nextColumn()
-        addButton("Load game", KeyboardBinding.LoadGame) {
+        if (managed == null) addButton("Load game", KeyboardBinding.LoadGame) {
             close()
             worldScreen.game.pushScreen{ LoadGameScreen() }
         }.nextColumn()
-        addButton("Start new game", KeyboardBinding.NewGame) {
+        if (managed == null) addButton("Start new game", KeyboardBinding.NewGame) {
             close()
             worldScreen.openNewGameScreen()
         }.nextColumn()
@@ -88,7 +89,7 @@ class WorldScreenMenuPopup(
         
         addButton("Exit") {
             close()
-            Gdx.app.exit()
+            if (managed == null) Gdx.app.exit() else managed.exit()
         }.apply { actor.style = BaseScreen.skin.get("negative", TextButtonStyle::class.java) }
             .nextColumn()
 

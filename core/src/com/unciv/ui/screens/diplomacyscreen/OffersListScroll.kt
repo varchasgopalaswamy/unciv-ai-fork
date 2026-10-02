@@ -50,7 +50,8 @@ class OffersListScroll(
         otherSideOffers: TradeOffersList,
         untradableOffers: ResourceSupplyList = ResourceSupplyList.emptyList,
         ourCiv: ForeignCivView,
-        theirCiv: ForeignCivView
+        theirCiv: ForeignCivView,
+        editable: Boolean = true
     ) {
         table.clear()
         expanderTabs.clear()
@@ -97,6 +98,7 @@ class OffersListScroll(
                     else -> null
                 }
                 val tradeButton = IconTextButton(tradeLabel, tradeIcon).apply {
+                    name = "$persistenceID:${offer.type}:${offer.name}"
                     if (tradeIcon != null)
                         iconCell.size(30f)
                     label.setAlignment(Align.center)
@@ -110,10 +112,10 @@ class OffersListScroll(
                         else -> 1
                     }
 
-                if (offer.isTradable() && offer.name != Constants.peaceTreaty // can't disable peace treaty!
+                if (editable && offer.isTradable() && offer.name != Constants.peaceTreaty // can't disable peace treaty!
                     && (offer.name != Constants.researchAgreement // If we have a research agreement make sure the total gold of both Civs is higher than the total cost
                         // If both civs combined can pay for the research agreement, don't disable it. One can offer the other it's gold.
-                        || (ourCiv.gold + theirCiv.gold > ourCiv.getResearchAgreementCost(theirCiv) * 2))) {
+                        || (ourCiv.gold.toLong() + theirCiv.gold >= ourCiv.getResearchAgreementCost(theirCiv).toLong() * 2))) {
 
                     // highlight unique suggestions
                     if (offerType in listOf(Luxury_Resource, Strategic_Resource)

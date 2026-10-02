@@ -5,6 +5,7 @@ import com.unciv.Constants
 import com.unciv.logic.trade.TradeOffer
 import com.unciv.logic.trade.TradeOffersList
 import com.unciv.logic.trade.TradeOfferType
+import com.unciv.logic.trade.TradeOperations
 import com.unciv.models.translations.tr
 import com.unciv.ui.components.extensions.addSeparator
 import com.unciv.ui.components.extensions.surroundWithCircle
@@ -20,12 +21,15 @@ class OfferColumnsTable(
     private val screen: DiplomacyScreen,
     private val ourCiv: ForeignCivView,
     private val theirCiv: ForeignCivView,
+    private val canEdit: () -> Boolean = { true },
+    availableHeight: Float = screen.stage.height,
     private val onChange: () -> Unit
 ): Table(BaseScreen.skin) {
 
     fun addOffer(offer: TradeOffer, offerList: TradeOffersList, correspondingOfferList: TradeOffersList) {
-        offerList.add(offer.copy())
-        if (offer.type == TradeOfferType.Treaty) correspondingOfferList.add(offer.copy())
+        if (!canEdit()) return
+        val existing = offerList.firstOrNull { it.type == offer.type && it.name == offer.name }?.amount ?: 0
+        TradeOperations.edit(offerList, correspondingOfferList, offer, Math.addExact(existing, offer.amount))
         onChange()
     }
 
@@ -36,6 +40,7 @@ class OfferColumnsTable(
         counterList: TradeOffersList,
         civ: ForeignCivView
     ) {
+        if (!canEdit()) return
         when (offer.type) {
             TradeOfferType.Gold -> openGoldSelectionPopup(offer, list, civ.gold)
             TradeOfferType.Gold_Per_Turn -> openGoldSelectionPopup(offer, list, civ.getGoldPerTurn())
@@ -68,32 +73,32 @@ class OfferColumnsTable(
             add("Our items".tr())
             add("[${theirCiv.civName}]'s items".tr()).row()
 
-            add(ourAvailableOffersTable).prefSize(columnWidth, screen.stage.height / 2)
-            add(theirAvailableOffersTable).prefSize(columnWidth, screen.stage.height / 2).row()
+            add(ourAvailableOffersTable).prefSize(columnWidth, availableHeight / 2)
+            add(theirAvailableOffersTable).prefSize(columnWidth, availableHeight / 2).row()
 
             addSeparator().height(2f)
 
             add("Our trade offer".tr())
             add("[${theirCiv.civName}]'s trade offer".tr()).row()
-            add(ourOffersTable).size(columnWidth, screen.stage.height / 3)
-            add(theirOffersTable).size(columnWidth, screen.stage.height / 3)
+            add(ourOffersTable).size(columnWidth, availableHeight / 3)
+            add(theirOffersTable).size(columnWidth, availableHeight / 3)
         } else {
             // In portrait, this will arrange the items lists vertically
             // and the offers still side-by-side below that
             add("Our items".tr()).colspan(2).row()
-            add(ourAvailableOffersTable).height(screen.stage.height / 4f).colspan(2).row()
+            add(ourAvailableOffersTable).height(availableHeight / 4f).colspan(2).row()
 
             addSeparator().height(2f)
 
             add("[${theirCiv.civName}]'s items".tr()).colspan(2).row()
-            add(theirAvailableOffersTable).height(screen.stage.height / 4f).colspan(2).row()
+            add(theirAvailableOffersTable).height(availableHeight / 4f).colspan(2).row()
 
             addSeparator().height(5f)
 
             add("Our trade offer".tr())
             add("[${theirCiv.civName}]'s trade offer".tr()).row()
-            add(ourOffersTable).height(screen.stage.height / 4f).width(columnWidth)
-            add(theirOffersTable).height(screen.stage.height / 4f).width(columnWidth)
+            add(ourOffersTable).height(availableHeight / 4f).width(columnWidth)
+            add(theirOffersTable).height(availableHeight / 4f).width(columnWidth)
         }
         pack()
         update()
@@ -106,31 +111,27 @@ class OfferColumnsTable(
             .removeAll(Constants.tradable)
         val theirUntradables = theirCiv.getPerTurnResourcesWithOriginsForTrade()
             .removeAll(Constants.tradable)
-        ourAvailableOffersTable.update(ourFilteredOffers, tradeView.theirAvailableOffers(), ourUntradables, ourCiv, theirCiv)
-        ourOffersTable.update(tradeView.ourStagedOffers(), tradeView.theirAvailableOffers(), ourCiv = ourCiv, theirCiv = theirCiv)
-        theirOffersTable.update(tradeView.theirStagedOffers(), tradeView.ourAvailableOffers(), ourCiv = ourCiv, theirCiv = theirCiv)
-        theirAvailableOffersTable.update(theirFilteredOffers, tradeView.ourAvailableOffers(), theirUntradables, ourCiv, theirCiv)
+        ourAvailableOffersTable.update(ourFilteredOffers, tradeView.theirAvailableOffers(), ourUntradables, ourCiv, theirCiv, canEdit())
+        ourOffersTable.update(tradeView.ourStagedOffers(), tradeView.theirAvailableOffers(), ourCiv = ourCiv, theirCiv = theirCiv, editable = canEdit())
+        theirOffersTable.update(tradeView.theirStagedOffers(), tradeView.ourAvailableOffers(), ourCiv = ourCiv, theirCiv = theirCiv, editable = canEdit())
+        theirAvailableOffersTable.update(theirFilteredOffers, tradeView.ourAvailableOffers(), theirUntradables, ourCiv, theirCiv, canEdit())
     }
 
     private fun openGoldSelectionPopup(offer: TradeOffer, ourOffers: TradeOffersList, maxGold: Int) {
         val existingGoldOffer = ourOffers.firstOrNull { it.type == offer.type }
-        if (existingGoldOffer != null)
-            offer.amount = existingGoldOffer.amount
         AskNumberPopup(
             screen,
             label = "Enter the amount of gold",
             icon = ImageGetter.getStatIcon("Gold").surroundWithCircle(80f),
-            defaultValue = offer.amount,
+            defaultValue = existingGoldOffer?.amount ?: offer.amount,
             amountButtons =
             if (offer.type == TradeOfferType.Gold) listOf(50, 500)
             else listOf(5, 15),
             bounds = IntRange(0, maxGold),
             actionOnOk = { userInput ->
-                offer.amount = userInput
-                if (existingGoldOffer == null)
-                    ourOffers.add(offer)
-                else existingGoldOffer.amount = offer.amount
-                if (offer.amount == 0) ourOffers.remove(offer)
+                if (!canEdit()) return@AskNumberPopup
+                val opposite = if (ourOffers === tradeView.ourStagedOffers()) tradeView.theirStagedOffers() else tradeView.ourStagedOffers()
+                TradeOperations.edit(ourOffers, opposite, offer, userInput)
                 onChange()
             }
         ).open()

@@ -71,7 +71,7 @@ class CityScreen(
     val viewableCities: List<CityView> = cityView.getViewableCities()
 
     /** Toggles or adds/removes all state changing buttons */
-    val canChangeState = GUI.isAllowedChangeState() && !isSpying
+    val canChangeState get() = GUI.isAllowedChangeState() && !isSpying
 
     // Clockwise from the top-left
 

@@ -47,6 +47,11 @@ class ChatButton(val worldScreen: WorldScreen) : IconTextButton(
             height - badge.height / 1.5f
         )
 
+        worldScreen.game.managedSession?.let {
+            badge.isVisible = it.unreadCount > 0
+            badge.setText(it.unreadCount.toString())
+            return
+        }
         badge.isVisible = chat.unreadCount > 0 || ChatStore.hasGlobalMessage
 
         if (badge.isVisible) {
@@ -70,6 +75,7 @@ class ChatButton(val worldScreen: WorldScreen) : IconTextButton(
         updateBadge()
 
         onClick {
+            if (worldScreen.game.managedSession?.openDiplomacy() == true) return@onClick
             chat.unreadCount = 0
             ChatStore.hasGlobalMessage = false
             updateBadge()
@@ -84,6 +90,11 @@ class ChatButton(val worldScreen: WorldScreen) : IconTextButton(
      * Toggles [ChatButton] if needed and also starts or stops [ChatWebSocket] as required.
      */
     fun refreshVisibility() {
+        if (worldScreen.game.managedSession != null) {
+            isVisible = true
+            updatePosition()
+            return
+        }
         isVisible = if (
             worldScreen.gameInfo.gameParameters.isOnlineMultiplayer &&
             UncivGame.Current.onlineMultiplayer.multiplayerServer.getFeatureSet().chatVersion > 0
@@ -104,4 +115,9 @@ class ChatButton(val worldScreen: WorldScreen) : IconTextButton(
         worldScreen.techPolicyAndDiplomacy.x.coerceAtLeast(1f),
         worldScreen.techPolicyAndDiplomacy.y - height - 1f
     )
+
+    override fun act(delta: Float) {
+        if (worldScreen.game.managedSession != null) updateBadge()
+        super.act(delta)
+    }
 }

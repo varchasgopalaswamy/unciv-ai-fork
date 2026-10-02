@@ -34,10 +34,16 @@ import kotlinx.coroutines.runBlocking
 import kotlin.system.exitProcess
 
 
-internal object DesktopLauncher {
+object DesktopLauncher {
 
     @JvmStatic
     fun main(arg: Array<String>) {
+        launch(arg) { config, directory -> DesktopGame(config, directory) }
+        exitProcess(0)
+    }
+
+    /** Launch with the ordinary desktop platform setup and an application-supplied game. */
+    fun launch(arg: Array<String>, gameFactory: (Lwjgl3ApplicationConfiguration, String?) -> DesktopGame) {
 
         // Find the index of the "-creategame" parameter
         val createGameArg = arg.find { it.startsWith("--creategame=") }
@@ -145,8 +151,7 @@ internal object DesktopLauncher {
 
 
         // HardenGdxAudio extends Lwjgl3Application, and the Lwjgl3Application constructor runs as long as the game runs
-        HardenGdxAudio(DesktopGame(config, customDataDir), config)
-        exitProcess(0)
+        HardenGdxAudio(gameFactory(config, customDataDir), config)
     }
 
     private fun updateDockIconForMacOs(fileName: String) {

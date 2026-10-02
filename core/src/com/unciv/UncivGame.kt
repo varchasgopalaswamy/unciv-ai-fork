@@ -62,6 +62,8 @@ open class UncivGame(val isConsoleMode: Boolean = false) : Game(), PlatformSpeci
     /** The game currently in progress */
     var gameInfo: GameInfo? = null
 
+    var managedSession: com.unciv.ui.ManagedGameSession? = null
+
     lateinit var settings: GameSettings
     lateinit var musicController: MusicController
     lateinit var onlineMultiplayer: Multiplayer
@@ -197,6 +199,7 @@ open class UncivGame(val isConsoleMode: Boolean = false) : Game(), PlatformSpeci
      * @param autoPlay pass in the old WorldScreen AutoPlay to retain the state throughout turns. Otherwise leave it is the default.
      */
     suspend fun loadGame(newGameInfo: GameInfo, autoPlay: AutoPlay = AutoPlay(settings.autoPlay), callFromLoadScreen: Boolean = false): WorldScreen = withThreadPoolContext toplevel@{
+        if (managedSession?.ownsGame(newGameInfo) == false) throw CancellationException("Game was replaced")
         val prevGameInfo = gameInfo
         gameInfo = newGameInfo
 
@@ -223,23 +226,27 @@ open class UncivGame(val isConsoleMode: Boolean = false) : Game(), PlatformSpeci
         }
 
         return@toplevel withGLContext {
+            if (managedSession?.ownsGame(newGameInfo) == false) throw CancellationException("Game was replaced")
             for (screen in screenStack) screen.dispose()
             screenStack.clear()
 
             worldScreen = null // This allows the GC to collect our old WorldScreen, otherwise we keep two WorldScreens in memory.
-            val newWorldScreen = WorldScreen(newGameInfo, autoPlay, newGameInfo.getPlayerToViewAs(), worldScreenRestoreState)
+            val viewer = managedSession?.let { newGameInfo.getCivilization(it.viewingCivilization) }
+                ?: newGameInfo.getPlayerToViewAs()
+            val newWorldScreen = WorldScreen(newGameInfo, autoPlay, viewer, worldScreenRestoreState)
             worldScreen = newWorldScreen
 
             val moreThanOnePlayer = newGameInfo.civilizations.count { it.playerType == PlayerType.Human } > 1
             val isSingleplayer = !newGameInfo.gameParameters.isOnlineMultiplayer
-            val screenToShow = if (moreThanOnePlayer && isSingleplayer) {
+            val screenToShow = if (managedSession == null && moreThanOnePlayer && isSingleplayer) {
                 PlayerReadyScreen(newWorldScreen)
             } else {
                 newWorldScreen
             }
 
             screenStack.addLast(screenToShow)
-            setScreen(screenToShow) // Only here do we set the inputProcessor again 
+            setScreen(screenToShow) // Only here do we set the inputProcessor again
+            managedSession?.worldScreenCreated(newWorldScreen)
             loadingScreen.dispose()
 
             return@withGLContext newWorldScreen
@@ -276,7 +283,7 @@ open class UncivGame(val isConsoleMode: Boolean = false) : Game(), PlatformSpeci
 
     private fun setScreen(newScreen: BaseScreen) {
         debug("Setting new screen: %s, screenStack: %s", newScreen, screenStack)
-        Gdx.input.inputProcessor = newScreen.stage
+        Gdx.input.inputProcessor = managedSession?.input(newScreen.stage) ?: newScreen.stage
         super.setScreen(newScreen) // This can set the screen to the policy picker or tech picker screen, so the input processor must be set before
         if (newScreen is WorldScreen) {
             newScreen.shouldUpdate = true
@@ -314,7 +321,7 @@ open class UncivGame(val isConsoleMode: Boolean = false) : Game(), PlatformSpeci
     fun popScreen(silentQuit: Boolean = false): BaseScreen? {
         if (screenStack.size == 1) {
             if (silentQuit) {
-                Gdx.app.exit()
+                managedSession?.exit() ?: Gdx.app.exit()
                 return null
             }
             musicController.pause()
@@ -324,7 +331,7 @@ open class UncivGame(val isConsoleMode: Boolean = false) : Game(), PlatformSpeci
                 question = "Do you want to exit the game?",
                 confirmText = "Exit",
                 restoreDefault = { musicController.resumeFromShutdown() },
-                action = { Gdx.app.exit() }
+                action = { managedSession?.exit() ?: Gdx.app.exit() }
             ).open(force = true)
             return null
         }
@@ -426,7 +433,7 @@ open class UncivGame(val isConsoleMode: Boolean = false) : Game(), PlatformSpeci
         if (::musicController.isInitialized) musicController.pause()
         val curGameInfo = gameInfo
         // Since we're pausing the game, we don't need to clone it before autosave - no one else will touch it
-        if (curGameInfo != null) files.autosaves.requestAutoSaveUnCloned(curGameInfo)
+        if (curGameInfo != null && managedSession == null) files.autosaves.requestAutoSaveUnCloned(curGameInfo)
         Timers.singleton.endTiming()
         super.pause()
     }
@@ -515,6 +522,10 @@ private fun logRunningThreads() {
         fun handleUncaughtThrowable(ex: Throwable) {
             if (ex is CancellationException) {
                 return // kotlin coroutines use this for control flow... so we can just ignore them.
+            }
+            if (isCurrentInitialized()) Current.managedSession?.let {
+                it.failed(ex)
+                return
             }
             Log.error("Uncaught throwable", ex)
             dumpLastError(ex)

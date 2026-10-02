@@ -68,7 +68,7 @@ object ImageGetter {
         ImageGetter.ruleset = ruleset
         textureRegionDrawables.clear()
 
-        val setFontFamilyJob = Concurrency.run {
+        val setFontFamily = {
             // Loading available fonts can take a long time
             // Specifically the "set font family" part can take 700ms on my computer (!)
             // But running it a second time is fast
@@ -77,6 +77,12 @@ object ImageGetter {
             val settings = UncivGame.Current.settings
             Fonts.fontImplementation.setFontFamily(settings.fontFamilyData, settings.getFontSize())
         }
+        // A managed session may serialize jobs on this thread. Do not enqueue
+        // work that this synchronous resource loader will immediately join.
+        val setFontFamilyJob = if (UncivGame.Current.managedSession != null) {
+            setFontFamily()
+            null
+        } else Concurrency.run { setFontFamily() }
 
         // Load base
         loadModAtlases("", Gdx.files.internal(""))
@@ -91,7 +97,7 @@ object ImageGetter {
         SkinCache.assembleSkinConfigs(ruleset.mods)
 
         // Just in case, don't want to get into any "parallel font update" problems
-        runBlocking { setFontFamilyJob.join() }
+        if (setFontFamilyJob != null) runBlocking { setFontFamilyJob.join() }
         BaseScreen.setSkin()
         FontRulesetIcons.addRulesetImages(ruleset)
     }

@@ -112,15 +112,21 @@ class CivView(civ: Civilization,
     @Readonly fun calculateScoreBreakdown(): HashMap<String, Double> = civ.calculateScoreBreakdown()
 
     // Actions
+    @Readonly private fun canChangeState(): Boolean = civ === viewer &&
+        com.unciv.logic.civilization.PlayerOperations(civ, spectatorMode).canAct()
+
     fun tryDisableCivConstruction(name: String) {
+        if (!canChangeState()) return
         civ.cities.forEach { it.disabledConstructions.add(name) }
         civ.disabledCityConstructions.add(name)
     }
     fun tryEnableCivConstruction(name: String) {
+        if (!canChangeState()) return
         civ.cities.forEach { it.disabledConstructions.remove(name) }
         civ.disabledCityConstructions.remove(name)
     }
     fun trySetGoldPercentConvertedToScience(value: Float): Boolean {
+        if (!canChangeState()) return false
         civ.tech.goldPercentConvertedToScience = value
         return true
     }
@@ -130,7 +136,19 @@ class CivView(civ: Civilization,
     }
     fun tryDismissPolicyPicker(): Boolean =
         com.unciv.logic.civilization.PlayerOperations(civ, spectatorMode).tryDismissPolicyPicker()
-    fun tryDismissMoveSpies(): Boolean { civ.espionageManager.dismissedShouldMoveSpies = true; return true }
-    fun tryMarkMovedAutomatedUnits(): Boolean { civ.hasMovedAutomatedUnits = true; return true }
-    fun tryAutomateAllUnits(): Boolean { civ.units.getCivUnits().forEach { it.doAction() }; return true }
+    fun tryDismissMoveSpies(): Boolean {
+        if (!canChangeState()) return false
+        civ.espionageManager.dismissedShouldMoveSpies = true
+        return true
+    }
+    fun tryMarkMovedAutomatedUnits(): Boolean {
+        if (!canChangeState()) return false
+        civ.hasMovedAutomatedUnits = true
+        return true
+    }
+    fun tryAutomateAllUnits(): Boolean {
+        if (!canChangeState()) return false
+        civ.units.getCivUnits().forEach { it.doAction() }
+        return true
+    }
 }

@@ -63,7 +63,8 @@ class TradeLogic(val ourCivilization: Civilization, val otherCivilization: Civil
         ) {
             val resourceTradeOfferType = if (entry.resource.resourceType == ResourceType.Luxury) TradeOfferType.Luxury_Resource
             else TradeOfferType.Strategic_Resource
-            offers.add(TradeOffer(entry.resource.name, resourceTradeOfferType, entry.amount, speed = civInfo.gameInfo.speed))
+            val quantity = minOf(entry.amount, civInfo.getResourceAmount(entry.resource.name)).coerceAtLeast(0)
+            offers.add(TradeOffer(entry.resource.name, resourceTradeOfferType, quantity, speed = civInfo.gameInfo.speed))
         }
         
         for (entry in civInfo.getStockpiledResourcesForTrade()){
@@ -74,7 +75,10 @@ class TradeLogic(val ourCivilization: Civilization, val otherCivilization: Civil
         offers.add(TradeOffer(Constants.goldPerTurn, TradeOfferType.Gold_Per_Turn, civInfo.stats.statsForNextTurn.gold.toInt(), civInfo.gameInfo.speed))
 
         if (!civInfo.isOneCityChallenger() && !otherCiv.isOneCityChallenger())
-            for (city in civInfo.cities.filterNot { it.isCapital() || it.isInResistance() })
+            for (city in civInfo.cities.filterNot { city ->
+                city.isCapital() || city.isInResistance() || city.hasJustBeenConquered ||
+                    civInfo.popupAlerts.any { it.value == city.id && it.type in setOf(AlertType.CityTraded, AlertType.CityConquered) }
+            })
                 offers.add(TradeOffer(city.id, TradeOfferType.City, speed = civInfo.gameInfo.speed))
 
         val otherCivsWeKnow = civInfo.getKnownCivs()

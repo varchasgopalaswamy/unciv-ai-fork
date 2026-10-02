@@ -9,7 +9,7 @@ import com.unciv.logic.civilization.diplomacy.DiplomacyTurnManager.nextTurn
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.mapunit.UnitTurnManager
 import com.unciv.logic.map.tile.Tile
-import com.unciv.logic.trade.TradeEvaluation
+import com.unciv.logic.trade.TradeOperations
 import com.unciv.models.ruleset.unique.UniqueTriggerActivation
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.ruleset.unique.endTurn
@@ -84,7 +84,7 @@ class TurnManager(val civInfo: Civilization) {
 
         for (tradeRequest in civInfo.tradeRequests.toList()) { // remove trade requests where one of the sides can no longer supply
             val offeringCiv = civInfo.gameInfo.getCivilization(tradeRequest.requestingCiv)
-            if (offeringCiv.isDefeated() || !TradeEvaluation().isTradeValid(tradeRequest.trade, civInfo, offeringCiv)) {
+            if (offeringCiv.isDefeated() || TradeOperations(civInfo, offeringCiv).invalidReason(tradeRequest.trade) != null) {
                 civInfo.tradeRequests.remove(tradeRequest)
                 // Yes, this is the right direction. I checked.
                 offeringCiv.addNotification("Our proposed trade is no longer relevant!", NotificationCategory.Trade, NotificationIcon.Trade)

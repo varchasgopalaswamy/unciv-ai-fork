@@ -94,7 +94,7 @@ class PlayerPeaceOperationsTest {
         val actual = operations.availableTerms(greece)!!
         val expected = TradeLogic(rome, greece).ourAvailableOffers.map {
             PeaceTradeTerm(it.name, it.type, it.amount, it.duration)
-        }.filter(PlayerPeaceOperations::supportsTerm)
+        }
         assertEquals(expected, actual.ourOptions)
         assertThrows(UnsupportedOperationException::class.java) { (actual.ourOptions as MutableList<*>).clear() }
         assertTrue(operations.tryPropose(greece, listOf(peace(), gold(60)), listOf(peace(), gpt(1))))
@@ -215,7 +215,7 @@ class PlayerPeaceOperationsTest {
     }
 
     @Test
-    fun `unsupported requests cannot be partially accepted or countered but can be read and rejected`() {
+    fun `unavailable complete terms cannot be partially accepted but can be read and rejected`() {
         war()
         val trade = Trade().apply {
             ourOffers.add(offer(peace()))
@@ -225,9 +225,8 @@ class PlayerPeaceOperationsTest {
         val request = TradeRequest(greece.civID, trade)
         rome.tradeRequests.add(request)
         assertEquals(2, operations.inspectIncoming(request)!!.theirOffers.size)
-        assertTrue(operations.acceptUnavailableReason(request)!!.contains("unsupported"))
+        assertNotNull(operations.acceptUnavailableReason(request))
         assertFalse(operations.tryAccept(request))
-        assertFalse(operations.tryCounteroffer(request, listOf(peace()), listOf(peace())))
         assertSame(request, rome.tradeRequests.single())
         assertTrue(operations.tryReject(request))
         assertTrue(rome.isAtWarWith(greece))

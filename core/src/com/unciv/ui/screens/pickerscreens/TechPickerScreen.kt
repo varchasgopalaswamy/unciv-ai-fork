@@ -119,7 +119,7 @@ class TechPickerScreen(
             if (firstAvailableTech != null)
                 centerOnTechnology(firstAvailableTech)
         }
-        Gdx.input.inputProcessor = stage // Return input 
+        Gdx.input.inputProcessor = game.managedSession?.input(stage) ?: stage // Return input
     }
 
     override fun getCivilopediaRuleset() = ruleset
