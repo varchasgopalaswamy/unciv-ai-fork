@@ -89,6 +89,24 @@ data class GameContext(
     @Readonly
     fun stateBasedRandom(caller: String, seed: Int=31) =
         Random(hashOf(caller.hashCode(), seed, this.hashCode()))
+
+    /** Randomness for new-game placement, independent of the random game ID when a seed is set.
+     * Callers with only a tile/region must supply gameInfo explicitly, as during map generation.
+     * Ordinary turn events continue to use [stateBasedRandom]. */
+    @Readonly
+    fun gameSetupRandom(caller: String): Random {
+        val seed = gameInfo?.gameParameters?.startingPositionSeed ?: return stateBasedRandom(caller)
+        return Random(seed xor hashOf(
+            caller.hashCode(),
+            relevantCiv?.civID?.hashCode() ?: 0,
+            relevantTile?.position?.x ?: 0,
+            relevantTile?.position?.y ?: 0,
+            region?.rect?.x?.hashCode() ?: 0,
+            region?.rect?.y?.hashCode() ?: 0,
+            region?.rect?.width?.hashCode() ?: 0,
+            region?.rect?.height?.hashCode() ?: 0,
+        ).toLong())
+    }
         
     @Readonly
     fun getResourceAmount(resourceName: String): Int {
@@ -151,4 +169,3 @@ data class GameContext(
 
 
 }
-

@@ -29,9 +29,9 @@ import yairm210.purity.annotations.Readonly
 /**
  * Starts a new game
  *
- * Map terrain is determinisic, but game setup, including start locations, resources, and other
- * details, are random, based on [GameContext.stateBasedRandom], which is based on the gameId, which
- *  is fully random per game.
+ * Map terrain uses the map seed. Civilization selection, starting positions and resource placement
+ * use GameParameters.startingPositionSeed when provided, otherwise per-game randomness.
+ * Reproducing a starting position requires both seeds, the same rules and the same setup.
  */
 class GameStarter private constructor(
     private val gameSetupInfo: GameSetupInfo
@@ -44,8 +44,8 @@ class GameStarter private constructor(
             GameStarter(gameSetupInfo).gameInfo
     }
 
-    private val gameInfo = GameInfo()
-    private val rng = GameContext(gameInfo = gameInfo).stateBasedRandom("GameStarter")
+    private val gameInfo = GameInfo().apply { gameParameters = gameSetupInfo.gameParameters }
+    private val rng = GameContext(gameInfo = gameInfo).gameSetupRandom("GameStarter")
     private val ruleset: Ruleset
     private lateinit var tileMap: TileMap
 
@@ -65,7 +65,6 @@ class GameStarter private constructor(
         if (!RulesetCache.containsKey(gameSetupInfo.gameParameters.baseRuleset))
             gameSetupInfo.gameParameters.baseRuleset = RulesetCache.getVanillaRuleset().name
 
-        gameInfo.gameParameters = gameSetupInfo.gameParameters
         ruleset = RulesetCache.getComplexRuleset(gameInfo.gameParameters)
         val mapGen = MapGenerator(ruleset)
 
@@ -257,14 +256,14 @@ class GameStarter private constructor(
                 ruleset.nations.asSequence().map { it.value }
                     .filter { it.isMajorCiv && !it.hasUnique(UniqueType.WillNotBeChosenForNewGames) }
             ).filter { it.name !in selectedPlayerNames }
-            .shuffled().let { ArrayDeque(it.toList()) }
+            .shuffled(rng).let { ArrayDeque(it.toList()) }
 
         val civNamesWithStartingLocations =
             if (existingMap) gameInfo.tileMap.startingLocationsByNation.keys
             else emptySet()
         @LocalState val presetRandomNationsPool = randomNationsPool
             .filter { it.name in civNamesWithStartingLocations }
-            .shuffled().let { ArrayDeque(it) }
+            .shuffled(rng).let { ArrayDeque(it) }
         randomNationsPool.removeAll(presetRandomNationsPool)
 
         // At this point the civ names in newGameParameters.players, randomNationsPool and presetRandomNationsPool
@@ -288,7 +287,7 @@ class GameStarter private constructor(
                 val extraPlayers = newGameParameters.players.size - desiredNumberOfPlayers
                 selectedAIToSkip = newGameParameters.players
                     .filter { it.playerType === PlayerType.AI }
-                    .shuffled()
+                    .shuffled(rng)
                     .sortedByDescending { it.chosenCiv == Constants.random }
                     .subList(0, extraPlayers)
             }
@@ -319,7 +318,7 @@ class GameStarter private constructor(
         val otherPlayers = chosenPlayers.filterNot { it.chosenCiv == Constants.spectator }.toMutableList()
 
         // Shuffle Major Civs
-        if (newGameParameters.shufflePlayerOrder) otherPlayers.shuffle()
+        if (newGameParameters.shufflePlayerOrder) otherPlayers.shuffle(rng)
 
         chosenPlayers.clear()
         chosenPlayers.addAll(spectators)
@@ -340,7 +339,7 @@ class GameStarter private constructor(
                 it.value.isCityState &&
                     !it.value.hasUnique(UniqueType.WillNotBeChosenForNewGames)
             }.map { it.value }
-            .shuffled()
+            .shuffled(rng)
             .sortedByDescending { it.name in civNamesWithStartingLocations }  // please those with location first
             .take(numberOfCityStates)
             .map { Player(it) }
@@ -387,7 +386,7 @@ class GameStarter private constructor(
             .firstOrNull()
             ?.stats ?: Stats.DefaultCityCenterMinimum
 
-        val startScores = HashMap<Tile, Float>(tileMap.values.size)
+        val startScores = LinkedHashMap<Tile, Float>(tileMap.values.size)
         for (tile in tileMap.values) {
             startScores[tile] = tile.stats.getTileStartScore(cityCenterMinStats)
         }
@@ -563,7 +562,7 @@ class GameStarter private constructor(
 
     @Readonly
     private fun getCivsOrderedByAvailableLocations(civs: List<Civilization>): List<Civilization> {
-        return civs.shuffled()   // Order should be random since it determines who gets best start
+        return civs.shuffled(rng)   // Order should be random since it determines who gets best start
             .sortedBy { civ ->
                 val startBias = civ.nation.getStartBias(ruleset, civ.getGameContextForStartBias())
                 when {

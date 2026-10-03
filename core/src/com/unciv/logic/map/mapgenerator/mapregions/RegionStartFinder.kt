@@ -23,7 +23,7 @@ object RegionStartFinder {
 
     /** Attempts to find a good start close to the center of [region]. Calls setRegionStart with the position*/
     internal fun findStart(region: Region, tileData: TileDataMap) {
-        val fallbackTiles = HashSet<Tile>()
+        val fallbackTiles = LinkedHashSet<Tile>()
         // Priority: 1. Adjacent to river, 2. Adjacent to coast or fresh water, 3. Other.
 
         // First check center rect, then middle. Only check the outer area if no good sites found
@@ -43,9 +43,9 @@ object RegionStartFinder {
     }
 
     private fun findGoodPosition(centerTiles: Set<Tile>, region: Region, tileData: TileDataMap, fallbackTiles: HashSet<Tile>): Boolean {
-        val riverTiles = HashSet<Tile>()
-        val wetTiles = HashSet<Tile>()
-        val dryTiles = HashSet<Tile>()
+        val riverTiles = LinkedHashSet<Tile>()
+        val wetTiles = LinkedHashSet<Tile>()
+        val dryTiles = LinkedHashSet<Tile>()
         for (tile in centerTiles) {
             if (tileData[tile]!!.isTwoFromCoast)
                 continue // Don't even consider tiles two from coast
@@ -81,7 +81,7 @@ object RegionStartFinder {
         tileData: TileDataMap,
         fallbackTiles: HashSet<Tile>
     ): Boolean {
-        val dryTiles = HashSet<Tile>()
+        val dryTiles = LinkedHashSet<Tile>()
         for (tile in outerDonut) {
             if (region.continentID != -1 && region.continentID != tile.getContinent())
                 continue // Wrong continent

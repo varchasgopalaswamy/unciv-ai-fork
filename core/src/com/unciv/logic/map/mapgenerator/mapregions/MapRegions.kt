@@ -14,6 +14,7 @@ import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.tile.Terrain
 import com.unciv.models.ruleset.tile.TerrainType
 import com.unciv.models.ruleset.tile.TileResource
+import com.unciv.models.ruleset.unique.GameContext
 import com.unciv.models.ruleset.unique.Unique
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.translations.equalsPlaceholderText
@@ -379,7 +380,7 @@ class MapRegions (val ruleset: Ruleset) {
 
         // Finally assign the remaining civs randomly
         for (civ in randomCivs) {
-            val rng = civ.state.stateBasedRandom("MapRegions.assignRegions")
+            val rng = GameContext(civInfo = civ, gameInfo = tileMap.gameInfo).gameSetupRandom("MapRegions.assignRegions")
             // throws if regions.size < civilizations.size or if the assigning mismatched - leads to popup on newgame screen
             val startRegion = unpickedRegions.random(rng)
             logAssignRegion(true, BiasTypes.Random, civ, startRegion)

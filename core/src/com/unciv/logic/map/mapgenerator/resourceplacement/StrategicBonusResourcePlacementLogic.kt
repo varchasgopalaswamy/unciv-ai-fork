@@ -38,6 +38,7 @@ object StrategicBonusResourcePlacementLogic {
     We also save a list of all land tiles for minor deposit generation. */
 
     internal fun placeStrategicAndBonuses(tileMap: TileMap, regions: ArrayList<Region>, tileData: TileDataMap) {
+        val rng = GameContext(gameInfo = tileMap.gameInfo).gameSetupRandom("StrategicBonusResourcePlacementLogic.placeStrategicAndBonuses")
         val ruleset = tileMap.ruleset!!
         val strategicResources = ruleset.tileResources.values.filter { it.resourceType == ResourceType.Strategic }
         // As usual, if there are any relevant json definitions, assume they are complete
@@ -55,7 +56,7 @@ object StrategicBonusResourcePlacementLogic {
         val ruleLists = buildRuleLists(ruleset, tileMap, regions, fallbackStrategic, strategicResources) // For rule-based generation
         
         // Now go through the entire map to build lists
-        for (tile in tileMap.values.asSequence().shuffled()) {
+        for (tile in tileMap.values.asSequence().shuffled(rng)) {
             val terrainCondition = GameContext(attackedTile = tile, region = regions.firstOrNull { tile in it.tiles })
             if (tile.getBaseTerrain().hasUnique(UniqueType.BlocksResources, terrainCondition)) continue // Don't count snow hills
             if (tile.isLand) landList.add(tile)
@@ -83,7 +84,7 @@ object StrategicBonusResourcePlacementLogic {
         tileMap: TileMap,
         tileData: TileDataMap
     ) {
-        val rng = GameContext(gameInfo = tileMap.gameInfo).stateBasedRandom("StrategicBonusResourcePlacementLogic.placeBonusInThirdRingOfStart")
+        val rng = GameContext(gameInfo = tileMap.gameInfo).gameSetupRandom("StrategicBonusResourcePlacementLogic.placeBonusInThirdRingOfStart")
         for (region in regions) {
             val terrain = if (region.type == "Hybrid") region.terrainCounts.filterNot { it.key == "Coastal" }
                 .maxByOrNull { it.value }!!.key
@@ -98,7 +99,7 @@ object StrategicBonusResourcePlacementLogic {
                 if (possibleResources.isEmpty()) continue
                 possibleResources.random(rng)
             }
-            val candidateTiles = tileMap[region.startPosition!!].getTilesAtDistance(3).shuffled()
+            val candidateTiles = tileMap[region.startPosition!!].getTilesAtDistance(3).shuffled(rng)
             val amount = if (resourceUnique != null) 2 else 1 // Place an extra if the region type requests it
             if (MapRegionResources.tryAddingResourceToTiles(tileData, resource, amount, candidateTiles) == 0) {
                 // We couldn't place any, try adding a fish instead
@@ -120,6 +121,7 @@ object StrategicBonusResourcePlacementLogic {
         bonusMultiplier: Float,
         tileMap: TileMap
     ) {
+        val rng = GameContext(gameInfo = tileMap.gameInfo).gameSetupRandom("StrategicBonusResourcePlacementLogic.placeBonusResources")
         // Figure out if bonus generation rates are defined in json. Assume that if there are any, the definitions are complete.
         val useFallbackBonuses = ruleset.tileResources.values.none { it.hasUnique(UniqueType.ResourceFrequency) }
         
@@ -150,7 +152,7 @@ object StrategicBonusResourcePlacementLogic {
                 // Since we haven't been able to generate any rule-based lists, just generate new ones on the fly
                 // Increase impact to avoid clustering since there is no terrain type stratification.
                 val fallbackList =
-                    tileMap.values.filter { it.lastTerrain.name in resource.terrainsCanBeFoundOn }.shuffled()
+                    tileMap.values.filter { it.lastTerrain.name in resource.terrainsCanBeFoundOn }.shuffled(rng)
                 MapRegionResources.placeResourcesInTiles(
                     tileData,
                     (20 * bonusMultiplier).toInt(),
@@ -174,11 +176,12 @@ object StrategicBonusResourcePlacementLogic {
         tileMap: TileMap,
         tileData: TileDataMap
     ) {
+        val rng = GameContext(gameInfo = tileMap.gameInfo).gameSetupRandom("StrategicBonusResourcePlacementLogic.ensureMinimumResourcesPerCiv")
         for (resource in strategicResources) {
             val extraNeeded = min(2, regions.size - totalPlaced[resource]!!)
             if (extraNeeded > 0) {
                 val tilesToAddTo = if (!isWaterOnlyResource(resource, ruleset)) landList.asSequence()
-                else tileMap.values.asSequence().filter { it.isWater }.shuffled()
+                else tileMap.values.asSequence().filter { it.isWater }.shuffled(rng)
 
                 MapRegionResources.tryAddingResourceToTiles(
                     tileData,
@@ -224,7 +227,7 @@ object StrategicBonusResourcePlacementLogic {
         fallbackStrategic: Boolean,
         totalPlaced: HashMap<TileResource, Int>
     ) {
-        val rng = GameContext(gameInfo = landList[0].tileMap.gameInfo).stateBasedRandom("StrategicBonusResourcePlacementLogic.placeMinorDepositsOnLand")
+        val rng = GameContext(gameInfo = landList[0].tileMap.gameInfo).gameSetupRandom("StrategicBonusResourcePlacementLogic.placeMinorDepositsOnLand")
         val frequency = (baseMinorDepositFrequency * bonusMultiplier).toInt()
         val minorDepositsToAdd =
             (landList.size / frequency) + 1 // I sometimes have division by zero errors on this line
@@ -262,7 +265,7 @@ object StrategicBonusResourcePlacementLogic {
         totalPlaced: HashMap<TileResource, Int>,
         tileData: TileDataMap
     ) {
-        val rng = GameContext(gameInfo = tileMap.gameInfo).stateBasedRandom("StrategicBonusResourcePlacementLogic.placeSmallDepositsOfModernStrategicResourcesOnCityStates")
+        val rng = GameContext(gameInfo = tileMap.gameInfo).gameSetupRandom("StrategicBonusResourcePlacementLogic.placeSmallDepositsOfModernStrategicResourcesOnCityStates")
         val lastEra = ruleset.eras.values.maxOf { it.eraNumber }
         val modernOptions = strategicResources.filter {
             it.revealedBy != null &&

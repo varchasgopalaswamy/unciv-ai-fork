@@ -176,7 +176,7 @@ object MinorCivPlacer {
         )
         // Fallback to a random region for civs that couldn't be placed in the wilderness
         for (unplacedCiv in civAssignedToUninhabited) {
-            val rng = unplacedCiv.state.stateBasedRandom("MinorCivPlacer.placeAssignedMinorCivs")
+            val rng = GameContext(civInfo = unplacedCiv, gameInfo = tileMap.gameInfo).gameSetupRandom("MinorCivPlacer.placeAssignedMinorCivs")
             regions.random(rng).assignedMinorCivs.add(unplacedCiv)
         }
 
@@ -203,7 +203,8 @@ object MinorCivPlacer {
             minorCivRatio > 1.35f -> 1
             else -> 0
         }
-        val unassignedCivs = civs.shuffled().toMutableList()
+        val rng = GameContext(gameInfo = regions.first().tileMap.gameInfo).gameSetupRandom("MinorCivPlacer.assignMinorCivsDirectlyToRegions")
+        val unassignedCivs = civs.shuffled(rng).toMutableList()
         if (minorCivPerRegion > 0) {
             regions.forEach {
                 val civsToAssign = unassignedCivs.take(minorCivPerRegion)
@@ -239,7 +240,7 @@ object MinorCivPlacer {
             )
             val pool = preferred.ifEmpty { tileList }
 
-            val rng = GameContext(gameInfo = tileMap.gameInfo).stateBasedRandom("MinorCivPlcer.tryPlaceMinorCivsInTiles")
+            val rng = GameContext(gameInfo = tileMap.gameInfo).gameSetupRandom("MinorCivPlcer.tryPlaceMinorCivsInTiles")
             val chosenTile = pool.random(rng)
             tileList.remove(chosenTile)
             val data = tileData[chosenTile]!!

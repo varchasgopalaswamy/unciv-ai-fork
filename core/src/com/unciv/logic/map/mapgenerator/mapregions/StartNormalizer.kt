@@ -49,7 +49,7 @@ object StartNormalizer {
         ruleset: Ruleset,
         tileData: TileDataMap
     ) {
-        val rng = GameContext(civInfo = startTile.getOwner(), tile = startTile).stateBasedRandom("StartNormalizer.normalizeProduction")
+        val rng = GameContext(civInfo = startTile.getOwner(), tile = startTile, gameInfo = startTile.tileMap.gameInfo).gameSetupRandom("StartNormalizer.normalizeProduction")
         // evaluate production potential
         val innerProduction =
             startTile.neighbors.sumOf { getPotentialYield(it, Stat.Production).toInt() }
@@ -89,8 +89,8 @@ object StartNormalizer {
                 it.resourceType == ResourceType.Strategic &&
                         (it.revealedBy == null ||
                             ruleset.technologies[it.revealedBy]!!.era() in earlyEras)
-            }.shuffled()
-            val candidateTiles = startTile.getTilesAtDistance(2).shuffled()
+            }.shuffled(rng)
+            val candidateTiles = startTile.getTilesAtDistance(2).shuffled(rng)
             for (resource in validResources) {
                 val resourcesAdded = MapRegionResources.tryAddingResourceToTiles(
                     tileData, resource, 1, candidateTiles, majorDeposit = false)
@@ -104,9 +104,10 @@ object StartNormalizer {
         ruleset: Ruleset,
         tileData: TileDataMap
     ) {
+        val rng = GameContext(tile = startTile, gameInfo = startTile.tileMap.gameInfo).gameSetupRandom("StartNormalizer.placeStrategicBalanceResources")
         val candidateTiles =
-            startTile.getTilesInDistanceRange(1..2).shuffled() + startTile.getTilesAtDistance(3)
-                .shuffled()
+            startTile.getTilesInDistanceRange(1..2).shuffled(rng) + startTile.getTilesAtDistance(3)
+                .shuffled(rng)
         for (resource in ruleset.tileResources.values.filter { it.hasUnique(UniqueType.StrategicBalanceResource) }) {
             if (MapRegionResources.tryAddingResourceToTiles(
                     tileData,
@@ -137,7 +138,7 @@ object StartNormalizer {
 
     /** Check for very food-heavy starts that might still need some stone to help with production */
     private fun addProductionBonuses(startTile: Tile, ruleset: Ruleset) {
-        val rng = GameContext(gameInfo = startTile.tileMap.gameInfo).stateBasedRandom("StartNormalizer.addProductionBonuses")
+        val rng = GameContext(gameInfo = startTile.tileMap.gameInfo).gameSetupRandom("StartNormalizer.addProductionBonuses")
         val grassTypePlots = startTile.getTilesInDistanceRange(1..2).filter {
             it.isLand &&
                 getPotentialYield(it, Stat.Food, unimproved = true) >= 2f && // Food neutral natively
@@ -178,6 +179,7 @@ object StartNormalizer {
         ruleset: Ruleset,
         tileMap: TileMap
     ): Int {
+        val rng = GameContext(tile = startTile, gameInfo = tileMap.gameInfo).gameSetupRandom("StartNormalizer.calculateFoodBonusesNeeded")
         // evaluate food situation
         // Food²/4 because excess food is really good and lets us work other tiles or run specialists!
         // 2F is worth 1, 3F is worth 2, 4F is worth 4, 5F is worth 6 and so on
@@ -230,7 +232,7 @@ object StartNormalizer {
             val candidateOuterSpots = startTile.getTilesAtDistance(2)
                 .filter { it.isLand && !it.isImpassible() && it.terrainFeatures.isEmpty() && it.resource == null }
             val spot =
-                candidateInnerSpots.shuffled().firstOrNull() ?: candidateOuterSpots.shuffled()
+                candidateInnerSpots.shuffled(rng).firstOrNull() ?: candidateOuterSpots.shuffled(rng)
                     .firstOrNull()
             if (twoFoodTerrain != null && spot != null) {
                 spot.baseTerrain = twoFoodTerrain
@@ -246,7 +248,7 @@ object StartNormalizer {
         ruleset: Ruleset,
         foodBonusesNeeded: Int
     ) {
-        val rng = GameContext(tile = startTile).stateBasedRandom("StartNormalizer.placeFoodBonuses")
+        val rng = GameContext(tile = startTile, gameInfo = startTile.tileMap.gameInfo).gameSetupRandom("StartNormalizer.placeFoodBonuses")
         var bonusesStillNeeded = foodBonusesNeeded
         val oasisEquivalent = ruleset.terrains.values.firstOrNull {
             it.type == TerrainType.TerrainFeature &&
@@ -264,7 +266,7 @@ object StartNormalizer {
         // Start with list of candidate plots sorted in ring order 1,2,3
         val candidatePlots = startTile.getTilesInDistanceRange(1..rangeForBonuses)
             .filter { it.resource == null && oasisEquivalent !in it.terrainFeatureObjects }
-            .shuffled().sortedBy { it.aerialDistanceTo(startTile) }.toMutableList()
+            .shuffled(rng).sortedBy { it.aerialDistanceTo(startTile) }.toMutableList()
 
         // Place food bonuses (and oases) as able
         while (bonusesStillNeeded > 0 && candidatePlots.isNotEmpty()) {

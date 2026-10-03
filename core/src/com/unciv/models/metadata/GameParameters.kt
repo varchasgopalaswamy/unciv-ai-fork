@@ -33,6 +33,10 @@ class GameParameters : IsPartOfGameInfoSerialization { // Default values are the
     var noStartBias = false
     var shufflePlayerOrder = false
 
+    /** Optional seed for new-game civilization selection, starting positions and nearby resources.
+     * Independent of the map terrain seed and of randomness during subsequent turns. */
+    var startingPositionSeed: Long? = null
+
     var victoryTypes: ArrayList<String> = arrayListOf()
     var startingEra = "Ancient era"
 
@@ -93,6 +97,7 @@ class GameParameters : IsPartOfGameInfoSerialization { // Default values are the
         parameters.espionageEnabled = espionageEnabled
         parameters.noStartBias = noStartBias
         parameters.shufflePlayerOrder = shufflePlayerOrder
+        parameters.startingPositionSeed = startingPositionSeed
         parameters.victoryTypes = ArrayList(victoryTypes)
         parameters.startingEra = startingEra
         parameters.showCivilizationStats = showCivilizationStats
@@ -114,6 +119,7 @@ class GameParameters : IsPartOfGameInfoSerialization { // Default values are the
     // For debugging and GameStarter console output
     override fun toString() = sequence {
             yield("$difficulty $speed $startingEra")
+            startingPositionSeed?.let { yield("Starting position seed: $it") }
             yield("${players.count { it.playerType == PlayerType.Human }} ${PlayerType.Human}")
             yield("${players.count { it.playerType == PlayerType.AI }} ${PlayerType.AI}")
             if (randomNumberOfPlayers) yield("Random number of Players: $minNumberOfPlayers..$maxNumberOfPlayers")
