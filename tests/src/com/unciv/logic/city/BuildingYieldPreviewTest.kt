@@ -129,4 +129,69 @@ class BuildingYieldPreviewTest {
         assertEquals(1f, result.after.total.culture - result.before.total.culture, 0.001f)
         assertEquals(before, json().toJson(game.gameInfo))
     }
+
+    @Test fun `following conversion uses completed building modifiers and has a separate cache entry`() {
+        val (game, city) = fixture()
+        city.civ.tech.addTechnology("Education", false)
+        city.civ.tech.addTechnology("Philosophy", false)
+        city.civ.tech.addTechnology("Currency", false)
+        city.civ.tech.addTechnology("Guilds", false)
+        city.population.setPopulation(6)
+        city.cityConstructions.addBuilding("Library")
+        city.cityConstructions.constructionQueue = arrayListOf("Science")
+        city.cityStats.update()
+        val saved = json().toJson(game.gameInfo)
+        val preview = BuildingYieldPreview(game.gameInfo)
+        val building = game.ruleset.buildings.getValue("University")
+        val idle = preview.compare(city, building)
+        val science = preview.compare(city, building, PerpetualConstruction.Science)
+        val gold = preview.compare(city, building, PerpetualConstruction.Gold)
+        assertTrue(science.after.total.science > idle.after.total.science)
+        assertTrue(gold.after.total.gold > idle.after.total.gold)
+        assertEquals(science, preview.compare(city, building, PerpetualConstruction.Science))
+        assertEquals(saved, json().toJson(game.gameInfo))
+        val worked = city.workedTiles.toHashSet()
+        city.cityConstructions.addBuilding(building)
+        city.workedTiles = worked
+        city.cityStats.update()
+        for (stat in Stat.entries)
+            if (stat != Stat.Happiness)
+                assertEquals(stat.name, city.cityStats.currentCityStats[stat], science.after.total[stat], 0.001f)
+    }
+
+    @Test fun `locked following conversion is rejected without changing the game`() {
+        val (game, city) = fixture()
+        val saved = json().toJson(game.gameInfo)
+        val failure = runCatching {
+            BuildingYieldPreview(game.gameInfo).compare(city, game.ruleset.buildings.getValue("Library"), PerpetualConstruction.Science)
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalArgumentException)
+        assertEquals(saved, json().toJson(game.gameInfo))
+    }
+
+    @Test fun `empire preview includes growth recovery in other cities`() {
+        val (game, city) = fixture()
+        city.population.setPopulation(8)
+        val other = game.addCity(city.civ, game.getTile(HexCoord(0, 5)), initialPopulation = 2)
+        other.cityConstructions.addBuilding("Granary")
+        other.cityConstructions.constructionQueue = arrayListOf(PerpetualConstruction.Idle.name)
+        val foodTiles = listOf(game.getTile(HexCoord(0, 4)), game.getTile(HexCoord(1, 5)))
+        for (tile in foodTiles) other.expansion.takeOwnership(tile)
+        other.workedTiles = foodTiles.map { it.position }.toHashSet()
+        // An empire happiness grant crosses the native unhappy growth threshold.
+        val building = game.ruleset.buildings.getValue("Notre Dame")
+        for (owned in city.civ.cities) owned.cityStats.update()
+        city.civ.updateStatsForNextTurn()
+        val saved = json().toJson(game.gameInfo)
+        val result = BuildingYieldPreview(game.gameInfo).compare(city, building)
+        assertTrue(result.empireAfter.happiness > result.empireBefore.happiness)
+        assertEquals(saved, json().toJson(game.gameInfo))
+        city.cityConstructions.addBuilding(building)
+        for (owned in city.civ.cities) owned.cityStats.update()
+        city.civ.updateStatsForNextTurn()
+        assertEquals(city.civ.stats.happiness, result.empireAfter.happiness)
+        assertEquals(other.foodForNextTurn(), result.empireAfter.cities.getValue(other.id).foodPerTurn)
+        assertTrue("Happiness ${result.empireBefore.happiness} -> ${result.empireAfter.happiness}; food ${result.empireBefore.cities.getValue(other.id).foodPerTurn} -> ${result.empireAfter.cities.getValue(other.id).foodPerTurn}",
+            result.empireAfter.cities.getValue(other.id).foodPerTurn > result.empireBefore.cities.getValue(other.id).foodPerTurn)
+    }
 }
