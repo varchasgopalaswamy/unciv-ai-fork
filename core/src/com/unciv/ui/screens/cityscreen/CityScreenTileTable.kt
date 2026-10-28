@@ -150,7 +150,7 @@ class CityScreenTileTable(private val cityScreen: CityScreen) : Table() {
                     val cost = getRingCost(ring)
                     val text = "Buy [$count] tiles in ring [$ring] for [$cost][${Stat.Gold.character}]"
                     val button = getButton(text, KeyboardBinding.None) { buyRing(ring) }
-                    button.isDisabled = cost > cityView.viewingCiv().gold
+                    button.isDisabled = cost > cityView.viewingCiv().availableGold()
                     add(button).row()
                 }
             }

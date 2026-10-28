@@ -126,7 +126,8 @@ internal class WorldScreenTopBarStats(topbar: WorldScreenTopBar) : ScalingTableW
 
         val nextTurnStats = civInfo.stats.statsForNextTurn
 
-        goldLabel.setText(civInfo.gold.tr())
+        goldLabel.setText(if (civInfo.committedGold() == 0) civInfo.gold.tr()
+            else "${civInfo.gold.tr()} (${civInfo.availableGold().tr()} available, ${civInfo.committedGold().tr()} committed)")
         goldPerTurnLabel.setText(rateLabel(nextTurnStats.gold))
 
         scienceLabel.setText(rateLabel(nextTurnStats.science))

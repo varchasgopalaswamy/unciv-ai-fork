@@ -21,7 +21,7 @@ object TradeAutomation {
         for (tradeRequest in civInfo.tradeRequests.toList()) {
             val otherCiv = civInfo.gameInfo.getCivilization(tradeRequest.requestingCiv)
             // Treat 'no trade' state as if all trades are invalid - thus AIs will not update its "turns to offer"
-            if (!tradeAndChangeState || TradeOperations(civInfo, otherCiv).invalidReason(tradeRequest.trade) != null) {
+            if (!tradeAndChangeState || TradeOperations(civInfo, otherCiv).invalidReason(tradeRequest.trade, tradeRequest.requestId) != null) {
                 tradeRequest.onResponse?.invoke("INVALID", null)
                 continue
             }
@@ -33,16 +33,16 @@ object TradeAutomation {
              * amount of available resources, since that will lead to "Our proposed trade is no longer valid" if we try to offer
              * the same resource to ANOTHER civ in this turn. Complicated!
              */
-            civInfo.tradeRequests.remove(tradeRequest)
             if (TradeEvaluation().isTradeAcceptable(tradeLogic.currentTrade, civInfo, otherCiv)) {
-                check(TradeOperations(civInfo, otherCiv).tryEnact(tradeLogic.currentTrade))
+                check(TradeOperations(civInfo, otherCiv).tryEnact(tradeLogic.currentTrade, tradeRequest.requestId))
                 otherCiv.addNotification("[${civInfo.civName}] has accepted your trade request", NotificationCategory.Trade, NotificationIcon.Trade, civInfo.civName)
                 tradeRequest.onResponse?.invoke("ENACTED", null)
             } else {
+                otherCiv.releaseTradeCommitment(tradeRequest.requestId)
                 val counteroffer = getCounteroffer(civInfo, tradeRequest)
                 if (counteroffer != null) {
                     otherCiv.addNotification("[${civInfo.civName}] has made a counteroffer to your trade request", NotificationCategory.Trade, NotificationIcon.Trade, civInfo.civName)
-                    otherCiv.tradeRequests.add(counteroffer)
+                    TradeOperations.enqueue(otherCiv, counteroffer)
                     tradeRequest.onResponse?.invoke("COUNTERED", counteroffer)
                 } else{
                     otherCiv.addNotification("[${civInfo.civName}] has denied your trade request", NotificationCategory.Trade, civInfo.civName, NotificationIcon.Trade)
@@ -52,6 +52,8 @@ object TradeAutomation {
                     
             }
         }
+        for (request in civInfo.tradeRequests)
+            civInfo.gameInfo.getCivilization(request.requestingCiv).releaseTradeCommitment(request.requestId)
         civInfo.tradeRequests.clear()
     }
 
@@ -197,7 +199,7 @@ object TradeAutomation {
             val trades = potentialLuxuryTrades(civInfo, otherCiv)
             for (trade in trades) {
                 val tradeRequest = TradeRequest(civInfo.civID, trade.reverse())
-                otherCiv.tradeRequests.add(tradeRequest)
+                TradeOperations.enqueue(otherCiv, tradeRequest)
             }
         }
     }

@@ -185,7 +185,7 @@ class DiplomacyFunctions(val civInfo: Civilization) {
     fun canSignResearchAgreementWith(otherCiv: Civilization): Boolean {
         val cost = getResearchAgreementCost(otherCiv)
         return canSignResearchAgreementNoCostWith(otherCiv)
-            && civInfo.gold >= cost && otherCiv.gold >= cost
+            && civInfo.availableGold() >= cost && otherCiv.availableGold() >= cost
     }
 
     @Readonly

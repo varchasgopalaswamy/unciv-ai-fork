@@ -88,7 +88,7 @@ class PlayerPurchaseOperations(private val civ: Civilization, private val specta
         if (construction is Building && construction.hasCreateOneImprovementUnique())
             reasons.add("This construction requires a tile placement choice")
         if (construction is BaseUnit && !city.canPlaceNewUnit(construction)) reasons.add("Move unit out of city first")
-        if (cost != null && !civ.gameInfo.gameParameters.godMode && city.getStatReserve(Stat.Gold) < cost)
+        if (cost != null && !civ.gameInfo.gameParameters.godMode && civ.availableGold() < cost)
             reasons.add("Not enough gold")
         return reasons.distinct()
     }
@@ -141,7 +141,7 @@ class PlayerPurchaseOperations(private val civ: Civilization, private val specta
         if (tile !in city.tilesInRange) reasons.add("The tile is outside this city's working range")
         if (tile.neighbors.none { it.getCity() === city }) reasons.add("The tile must border this city's territory")
         val cost = city.expansion.getGoldCostOfTile(tile)
-        if (!civ.gameInfo.gameParameters.godMode && civ.gold < cost) reasons.add("Not enough gold")
+        if (!civ.gameInfo.gameParameters.godMode && civ.availableGold() < cost) reasons.add("Not enough gold")
         return TileOption(tile.position.x, tile.position.y, cost, reasons.isEmpty(), frozen(reasons),
             "Currently you have [${civ.gold}] [Gold].\n\nWould you like to purchase [Tile] for [$cost] [${Stat.Gold.character}]?")
     }

@@ -736,7 +736,14 @@ class CityConstructions : IsPartOfGameInfoSerialization {
         automatic: Boolean,
         stat: Stat = Stat.Gold,
         tile: Tile? = null
-    ): Boolean {
+    ): Boolean = synchronized(city.civ.gameInfo) {
+        purchaseConstructionLocked(construction, queuePosition, automatic, stat, tile)
+    }
+
+    private fun purchaseConstructionLocked(construction: INonPerpetualConstruction, queuePosition: Int,
+            automatic: Boolean, stat: Stat, tile: Tile?): Boolean {
+        val offeredCost = construction.getStatBuyCost(city, stat) ?: return false
+        if (!isConstructionPurchaseAllowed(construction, stat, offeredCost)) return false
         // Support UniqueType.CreatesOneImprovement: it is active when getImprovementToCreate returns an improvement
         val improvementToPlace = (construction as? Building)?.getImprovementToCreate(city.getRuleset(), city.civ)
         if (improvementToPlace != null) {
@@ -808,7 +815,7 @@ class CityConstructions : IsPartOfGameInfoSerialization {
             !construction.canBePurchasedWithStat(city, stat) -> false
             city.civ.gameInfo.gameParameters.godMode -> true
             constructionBuyCost == 0 -> true
-            else -> city.getStatReserve(stat) >= constructionBuyCost
+            else -> city.hasStatToBuy(stat, constructionBuyCost)
         }
     }
 

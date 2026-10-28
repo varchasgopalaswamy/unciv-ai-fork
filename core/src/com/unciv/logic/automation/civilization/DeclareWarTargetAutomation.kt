@@ -4,6 +4,7 @@ import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.civilization.diplomacy.DiplomacyFlags
 import com.unciv.logic.civilization.diplomacy.RelationshipLevel
 import com.unciv.logic.trade.TradeLogic
+import com.unciv.logic.trade.TradeOperations
 import com.unciv.logic.trade.TradeOffer
 import com.unciv.logic.trade.TradeRequest
 import com.unciv.logic.trade.TradeOfferType
@@ -63,9 +64,7 @@ object DeclareWarTargetAutomation {
             tradeLogic.currentTrade.ourOffers.add(TradeOffer(target.civID, TradeOfferType.WarDeclaration, speed = civInfo.gameInfo.speed))
             tradeLogic.currentTrade.theirOffers.add(TradeOffer(target.civID, TradeOfferType.WarDeclaration, speed = civInfo.gameInfo.speed))
 
-            thirdCiv.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
-
-            return true
+            if (TradeOperations.enqueue(thirdCiv, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))) return true
         }
 
         return false
@@ -91,9 +90,7 @@ object DeclareWarTargetAutomation {
             val tradeLogic = TradeLogic(civInfo, thirdCiv)
             tradeLogic.currentTrade.ourOffers.add(TradeOffer(target.civID, TradeOfferType.WarDeclaration, speed = civInfo.gameInfo.speed))
             // TODO: Maybe add in payment requests in some situations
-            thirdCiv.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
-
-            return true
+            if (TradeOperations.enqueue(thirdCiv, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))) return true
         }
 
         return false

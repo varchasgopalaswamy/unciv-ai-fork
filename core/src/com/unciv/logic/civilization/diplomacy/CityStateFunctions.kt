@@ -213,7 +213,11 @@ class CityStateFunctions(val civInfo: Civilization) {
         return influenceGained.toInt()
     }
 
-    fun receiveGoldGift(donorCiv: Civilization, giftAmount: Int) {
+    fun receiveGoldGift(donorCiv: Civilization, giftAmount: Int) =
+        synchronized(donorCiv.gameInfo) { receiveGoldGiftLocked(donorCiv, giftAmount) }
+
+    private fun receiveGoldGiftLocked(donorCiv: Civilization, giftAmount: Int) {
+        if (giftAmount <= 0 || donorCiv.availableGold() < giftAmount) return
         if (!civInfo.isCityState) throw Exception("You can only gain influence with City-States!")
         donorCiv.addGold(-giftAmount)
         civInfo.addGold(giftAmount)
@@ -380,11 +384,13 @@ class CityStateFunctions(val civInfo: Civilization) {
                 && civInfo.getDiplomacyManager(otherCiv)!!.isRelationshipLevelEQ(RelationshipLevel.Ally)
                 && !otherCiv.getDiplomacyManager(civInfo)!!.hasFlag(DiplomacyFlags.MarriageCooldown)
                 && otherCiv.getMatchingUniques(UniqueType.CityStateCanBeBoughtForGold).any()
-                && otherCiv.gold >= getDiplomaticMarriageCost())
+                && otherCiv.availableGold() >= getDiplomaticMarriageCost())
 
     }
 
-    fun diplomaticMarriage(otherCiv: Civilization) {
+    fun diplomaticMarriage(otherCiv: Civilization) = synchronized(otherCiv.gameInfo) { diplomaticMarriageLocked(otherCiv) }
+
+    private fun diplomaticMarriageLocked(otherCiv: Civilization) {
         if (!canBeMarriedBy(otherCiv))  // Just in case
             return
 

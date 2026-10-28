@@ -108,6 +108,7 @@ class CivView(civ: Civilization,
     @Readonly fun getStatMapForNextTurn(): StatMap = civ.stats.getStatMapForNextTurn()
     @Readonly fun getHappinessBreakdown(): HashMap<String, Float> = civ.stats.getHappinessBreakdown()
     @Readonly fun getMatchingUniques(uniqueType: UniqueType): Sequence<Unique> = civ.getMatchingUniques(uniqueType)
+    @Readonly fun committedGold(): Int = if (civ === viewer) civ.committedGold() else 0
     @Readonly fun getGoldPercentConvertedToScience(): Float = civ.tech.goldPercentConvertedToScience
     @Readonly fun calculateScoreBreakdown(): HashMap<String, Double> = civ.calculateScoreBreakdown()
 

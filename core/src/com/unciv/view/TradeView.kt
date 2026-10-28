@@ -43,7 +43,7 @@ class TradeView(private val civ: Civilization, private val otherCiv: Civilizatio
         val operations = TradeOperations(civ, otherCiv)
         if (operations.initiationReason() != null || operations.invalidReason(tradeLogic.currentTrade) != null) return false
         if (hasPendingOfferFromUs()) return false
-        otherCiv.tradeRequests.add(TradeRequest(civ.civID, tradeLogic.currentTrade.reverse()))
+        TradeOperations.enqueue(otherCiv, TradeRequest(civ.civID, tradeLogic.currentTrade.reverse()))
         civ.cache.updateCivResources()
         return true
     }

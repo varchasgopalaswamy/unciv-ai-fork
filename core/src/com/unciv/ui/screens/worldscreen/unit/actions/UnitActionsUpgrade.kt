@@ -80,7 +80,7 @@ object UnitActionsUpgrade {
                 }.takeIf {
                     if (ordinaryPlayerUpgrade) option?.available == true
                     else isFree || (
-                        unit.civ.gold >= goldCostOfUpgrade
+                        unit.civ.availableGold() >= goldCostOfUpgrade
                             && unit.hasMovement()
                             && unitTile.getOwner() == civInfo
                             && !unit.isEmbarked()

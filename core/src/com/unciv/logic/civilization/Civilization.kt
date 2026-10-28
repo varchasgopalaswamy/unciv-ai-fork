@@ -146,6 +146,34 @@ class Civilization : IsPartOfGameInfoSerialization {
     /** The Civ's gold reserves. Public get, private set - please use [addGold] method to modify. */
     var gold = 0
         private set
+    var tradeCommitments = ArrayList<com.unciv.logic.trade.TradeCommitment>()
+    var invalidatedTradeCommitments = HashMap<String, String>()
+
+    @Readonly
+    fun isActiveCommitment(commitment: com.unciv.logic.trade.TradeCommitment): Boolean =
+        !commitment.nativeRequest || !this::gameInfo.isInitialized || gameInfo.civilizations.any { recipient ->
+            recipient.tradeRequests.any { it.requestingCiv == civID && it.requestId == commitment.id }
+        }
+
+    @Readonly
+    fun committedGold(excluding: String? = null): Int {
+        return tradeCommitments.filter { it.id != excluding && isActiveCommitment(it) }.sumOf { it.gold.toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    @Readonly
+    fun availableGold(excluding: String? = null): Int = (gold.toLong() - committedGold(excluding)).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+
+    @Readonly
+    fun committedResource(name: String, excluding: String? = null): Int {
+        return tradeCommitments.filter { it.id != excluding && isActiveCommitment(it) }.sumOf { it.resources[name]?.toLong() ?: 0L }
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    @Readonly
+    fun availableResource(name: String, excluding: String? = null): Int =
+        (getResourceAmount(name).toLong() - committedResource(name, excluding)).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
+
+    fun releaseTradeCommitment(id: String) { tradeCommitments = ArrayList(tradeCommitments.filter { it.id != id }) }
 
     /** The Civ's name
      *
@@ -325,6 +353,8 @@ class Civilization : IsPartOfGameInfoSerialization {
         toReturn.hasMovedAutomatedUnits = hasMovedAutomatedUnits
         toReturn.statsHistory = statsHistory.clone()
         toReturn.resourceStockpiles = resourceStockpiles.clone()
+        tradeCommitments.mapTo(toReturn.tradeCommitments) { it.clone() }
+        toReturn.invalidatedTradeCommitments.putAll(invalidatedTradeCommitments)
         return toReturn
     }
 
@@ -1002,12 +1032,19 @@ class Civilization : IsPartOfGameInfoSerialization {
      * @param delta the amount to add (can be negative)
      */
     fun addGold(delta: Int) {
+        if (this::gameInfo.isInitialized) synchronized(gameInfo) { changeGold(delta) }
+        else changeGold(delta)
+    }
+
+    private fun changeGold(delta: Int) {
         // not using Long.coerceIn - this stays in 32 bits
         gold = when {
             delta > 0 && gold > Int.MAX_VALUE - delta -> Int.MAX_VALUE
             delta < 0 && gold < Int.MIN_VALUE - delta -> Int.MIN_VALUE
             else -> gold + delta
         }
+        if (this::gameInfo.isInitialized && tradeCommitments.isNotEmpty())
+            com.unciv.logic.trade.TradeCommitment.reconcileBacking(this)
     }
 
     @Readonly
@@ -1015,7 +1052,7 @@ class Civilization : IsPartOfGameInfoSerialization {
         return when {
             gameInfo.gameParameters.godMode -> true
             price == 0 -> true
-            else -> getStatReserve(stat) >= price
+            else -> (if (stat == Stat.Gold) availableGold() else getStatReserve(stat)) >= price
         }
     }
 

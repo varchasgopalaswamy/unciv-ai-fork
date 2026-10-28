@@ -402,7 +402,8 @@ class Building : RulesetStatsObject(), INonPerpetualConstruction {
         }
 
         for ((resourceName, requiredAmount) in getResourceRequirementsPerTurn(stateForConditionals)) {
-            val availableAmount = cityConstructions.city.getAvailableResourceAmount(resourceName)
+            val availableAmount = cityConstructions.city.getAvailableResourceAmount(resourceName) -
+                (if (civ.gameInfo.ruleset.tileResources[resourceName]?.isCityWide == true) 0 else civ.committedResource(resourceName))
             if (availableAmount < requiredAmount) {
                 yield(RejectionReasonType.ConsumesResources.toInstance(resourceName.getNeedMoreAmountString(requiredAmount - availableAmount)))
             }

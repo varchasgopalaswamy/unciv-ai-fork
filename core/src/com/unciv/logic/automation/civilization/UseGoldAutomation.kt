@@ -24,7 +24,6 @@ object UseGoldAutomation {
         if (civ.isMajorCiv())
             useGoldForCityStates(civ)
 
-        val acceptableHurryCostModifier = civ.gold.coerceAtLeast(0)/100
         // Ideally we buy things with good gold:production conversion from purchasing and hard-build the rest, but some mods have high hurryCostModifier on everything leading to too much gold being saved. 
         // Rather than checking the full ruleset for future available constructions and determining if they're worth it, let's gradually accept less efficiency if it turns out we're saving too much
 
@@ -34,8 +33,9 @@ object UseGoldAutomation {
             if (construction !is INonPerpetualConstruction) continue
             val statBuyCost = construction.getStatBuyCost(city, Stat.Gold) ?: continue
             if (!city.cityConstructions.isConstructionPurchaseAllowed(construction, Stat.Gold, statBuyCost)) continue
-            if (civ.gold < statBuyCost || construction.hurryCostModifier > acceptableHurryCostModifier) continue
-            if (city.cityConstructions.getWorkDone(construction.name) > 0) continue // Don't buy things we already invested production into (may waste the invested production)
+            if (!com.unciv.logic.automation.AutomationSelection.purchase(
+                    civ.availableGold(), statBuyCost, construction.hurryCostModifier,
+                    city.cityConstructions.getWorkDone(construction.name))) continue
             city.cityConstructions.purchaseConstruction(construction, 0, true)
         }
 
@@ -48,7 +48,7 @@ object UseGoldAutomation {
         val knownCityStates = civ.getKnownCivs().filter { it.isCityState && MotivationToAttackAutomation.hasAtLeastMotivationToAttack(civ, it, 0f) <= 0 }.toList()
 
         // canBeMarriedBy checks actual cost, but it can't be below 500*speedmodifier, and the later check is expensive
-        if (civ.gold >= 330 && civ.getHappiness() > 0 && civ.hasUnique(UniqueType.CityStateCanBeBoughtForGold)) {
+        if (civ.availableGold() >= 330 && civ.getHappiness() > 0 && civ.hasUnique(UniqueType.CityStateCanBeBoughtForGold)) {
             for (cityState in knownCityStates.toList() ) {  // Materialize sequence as diplomaticMarriage may kill a CS
                 if (cityState.cityStateFunctions.canBeMarriedBy(civ))
                     cityState.cityStateFunctions.diplomaticMarriage(civ)
@@ -56,7 +56,7 @@ object UseGoldAutomation {
             }
         }
 
-        if (civ.gold < 500 || knownCityStates.none()) return // skip checks if tryGainInfluence will bail anyway
+        if (civ.availableGold() < 500 || knownCityStates.none()) return // skip checks if tryGainInfluence will bail anyway
         val cityState = knownCityStates
             .filter { it.allyCiv != civ }
             .associateWith { NextTurnAutomation.valueCityStateAlliance(civ, it, true) }
@@ -67,7 +67,7 @@ object UseGoldAutomation {
     }
 
     private fun maybeBuyCityTiles(civInfo: Civilization) {
-        if (civInfo.gold <= 0)
+        if (civInfo.availableGold() <= 0)
             return
         // Don't buy tiles in the very early game. It is unlikely that we already have the required
         // tech, the necessary worker and that there is a reasonable threat from another player to
@@ -102,7 +102,7 @@ object UseGoldAutomation {
             for (tileThatNeedsBuying in tilesThatNeedBuying) {
                 val goldCostOfTile =
                     cityWithLeastCostToBuy.expansion.getGoldCostOfTile(tileThatNeedsBuying)
-                if (civInfo.gold >= goldCostOfTile) {
+                if (civInfo.availableGold() >= goldCostOfTile) {
                     cityWithLeastCostToBuy.expansion.buyTile(tileThatNeedsBuying)
                     goldSpent += goldCostOfTile
                 } else {
@@ -167,14 +167,14 @@ object UseGoldAutomation {
     }
 
     private fun tryGainInfluence(civInfo: Civilization, cityState: Civilization) {
-        if (civInfo.gold < 500) return // Save up, giving 500 gold in one go typically grants +5 influence compared to giving 2×250 gold
+        if (civInfo.availableGold() < 500) return // Save up, giving 500 gold in one go typically grants +5 influence compared to giving 2×250 gold
         val influence = cityState.getDiplomacyManager(civInfo)!!.getInfluence()
         val stopSpending =  influence > 60 + 2 * NextTurnAutomation.valueCityStateAlliance(civInfo, cityState, true)
         // Don't go into a gold gift race: be content with friendship for cheap, or use the gold on more productive uses,
         // for example upgrading an army to conquer the player who's contesting our city states
         if (influence < 10 || stopSpending) return
         // Only make an investment if we got our Pledge to Protect influence at the highest level
-        if (civInfo.gold >= 1000) cityState.cityStateFunctions.receiveGoldGift(civInfo, 1000)
+        if (civInfo.availableGold() >= 1000) cityState.cityStateFunctions.receiveGoldGift(civInfo, 1000)
         else cityState.cityStateFunctions.receiveGoldGift(civInfo, 500)
         return
     }

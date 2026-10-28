@@ -83,7 +83,7 @@ class PlayerUnitEconomyOperations(private val civ: Civilization, private val spe
             val reasons = actionReasons(unit)
             if (unit.currentTile.getOwner() !== civ) reasons.add("The unit must be in your territory")
             if (unit.isEmbarked()) reasons.add("Embarked units cannot upgrade")
-            if (civ.gold < cost) reasons.add("Not enough gold")
+            if (civ.availableGold() < cost) reasons.add("Not enough gold")
             val destination = upgradeDestination(unit, target.name)
             if (destination == null) reasons.add("No tile is available for the upgraded unit")
             if (!unit.upgrade.canUpgrade(target)) {

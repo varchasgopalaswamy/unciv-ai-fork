@@ -85,12 +85,17 @@ class UnitUpgradeManager(val unit: MapUnit) {
      *  It might be desirable to return `newUnit` (or `resurrectedUnit`) if needed -
      *  but then the lambda in UnitActionsUpgrade will complain and need to be forced back to Unit type.
      */
-    fun performUpgrade(upgradedUnit: BaseUnit, isFree: Boolean, goldCostOfUpgrade: Int? = null) {
+    fun performUpgrade(upgradedUnit: BaseUnit, isFree: Boolean, goldCostOfUpgrade: Int? = null) =
+        synchronized(unit.civ.gameInfo) { performUpgradeLocked(upgradedUnit, isFree, goldCostOfUpgrade) }
+
+    private fun performUpgradeLocked(upgradedUnit: BaseUnit, isFree: Boolean, goldCostOfUpgrade: Int?) {
         // When mashing the upgrade button, you can 'queue' 2 upgrade actions
         //  If both are performed, what you get is the unit is doubled
-        //  This prevents this, since we lack another way to do so -_-'  
-        if (unit.isDestroyed) return  
-            
+        //  This prevents this, since we lack another way to do so -_-'
+        if (unit.isDestroyed) return
+        if (!isFree && !unit.civ.gameInfo.gameParameters.godMode &&
+            (!canUpgrade(upgradedUnit) || unit.civ.availableGold() < (goldCostOfUpgrade ?: getCostOfUpgrade(upgradedUnit)))) return
+
         val wasEscorting = unit.isEscorting()
         unit.destroy(destroyTransportedUnit = false)
         val civ = unit.civ

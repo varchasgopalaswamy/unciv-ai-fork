@@ -14,7 +14,7 @@ import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.unique.UniqueType
 import yairm210.purity.annotations.Readonly
 
-class TradeLogic(val ourCivilization: Civilization, val otherCivilization: Civilization) {
+class TradeLogic(val ourCivilization: Civilization, val otherCivilization: Civilization, private val commitmentId: String? = null) {
 
     /** Contains everything we could offer the other player, whether we've actually offered it or not */
     var ourAvailableOffers = TradeOffersList()
@@ -63,7 +63,7 @@ class TradeLogic(val ourCivilization: Civilization, val otherCivilization: Civil
         ) {
             val resourceTradeOfferType = if (entry.resource.resourceType == ResourceType.Luxury) TradeOfferType.Luxury_Resource
             else TradeOfferType.Strategic_Resource
-            val quantity = minOf(entry.amount, civInfo.getResourceAmount(entry.resource.name)).coerceAtLeast(0)
+            val quantity = minOf(entry.amount, civInfo.availableResource(entry.resource.name, commitmentId)).coerceAtLeast(0)
             offers.add(TradeOffer(entry.resource.name, resourceTradeOfferType, quantity, speed = civInfo.gameInfo.speed))
         }
         
@@ -71,7 +71,7 @@ class TradeLogic(val ourCivilization: Civilization, val otherCivilization: Civil
             offers.add(TradeOffer(entry.resource.name, TradeOfferType.Stockpiled_Resource, entry.amount, speed = civInfo.gameInfo.speed))
         }
 
-        offers.add(TradeOffer(Constants.flatGold, TradeOfferType.Gold, civInfo.gold, speed = civInfo.gameInfo.speed))
+        offers.add(TradeOffer(Constants.flatGold, TradeOfferType.Gold, civInfo.availableGold(commitmentId), speed = civInfo.gameInfo.speed))
         offers.add(TradeOffer(Constants.goldPerTurn, TradeOfferType.Gold_Per_Turn, civInfo.stats.statsForNextTurn.gold.toInt(), civInfo.gameInfo.speed))
 
         if (!civInfo.isOneCityChallenger() && !otherCiv.isOneCityChallenger())

@@ -105,7 +105,7 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
         if (!civ.isAtWarWith(other)) return@synchronized "These civilizations are already at peace."
         if (civ.gameInfo.ruleset.modOptions.hasUnique(UniqueType.DiplomaticRelationshipsCannotChange))
             return@synchronized "Diplomatic relationships cannot change in this game."
-        if (!validTerms(other, snapshot(request.trade))) "The offered quantities or durations are no longer available."
+        if (!validTerms(other, snapshot(request.trade), request.requestId)) "The offered quantities or durations are no longer available."
         else null
     }
 
@@ -169,7 +169,7 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
             if (counterofferUnavailableReason(request) != null) return@synchronized false
             val other = counterpart(request) ?: return@synchronized false
             val trade = PeaceTrade(ourTerms.toList(), theirTerms.toList())
-            if (!validTerms(other, trade)) return@synchronized false
+            if (!validTerms(other, trade, request.requestId)) return@synchronized false
             civ.tradeRequests.remove(request)
             send(other, trade)
             other.cache.updateCivResources()
@@ -196,13 +196,13 @@ class PlayerPeaceOperations(private val civ: Civilization, private val spectator
     }
 
     private fun send(other: Civilization, trade: PeaceTrade) {
-        other.tradeRequests.add(TradeRequest(civ.civID, toTrade(trade).reverse()))
+        TradeOperations.enqueue(other, TradeRequest(civ.civID, toTrade(trade).reverse()))
         civ.cache.updateCivResources()
     }
 
-    private fun validTerms(other: Civilization, trade: PeaceTrade): Boolean {
+    private fun validTerms(other: Civilization, trade: PeaceTrade, commitmentId: String? = null): Boolean {
         val native = toTrade(trade)
-        return native.isPeaceTreaty() && TradeOperations(civ, other).invalidReason(native) == null
+        return native.isPeaceTreaty() && TradeOperations(civ, other).invalidReason(native, commitmentId) == null
     }
 
     companion object {

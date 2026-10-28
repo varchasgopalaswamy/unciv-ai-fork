@@ -82,7 +82,7 @@ class UnitUpgradeMenu(
         val allResources = unitAction.newResourceRequirements * allCount
         val upgradeAllText = "Upgrade all [$allCount] [${unit.name}] ([$allCost] gold)"
         val upgradeAllButton = getButton(upgradeAllText, KeyboardBinding.UpgradeAll, ::doAllUpgrade)
-        val insufficientGold = unit.civ.gold < allCost
+        val insufficientGold = unit.civ.availableGold() < allCost
         val insufficientResources = getInsufficientResourcesMessage(allResources, unit.civ)
         upgradeAllButton.isDisabled = insufficientGold || insufficientResources.isNotEmpty()
         add(upgradeAllButton).padTop(7f).growX().row()

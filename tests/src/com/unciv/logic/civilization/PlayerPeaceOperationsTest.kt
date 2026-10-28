@@ -179,11 +179,17 @@ class PlayerPeaceOperationsTest {
         rome.addGold(-201)
         assertNotNull(receiver.acceptUnavailableReason(request))
         assertFalse(receiver.tryAccept(request))
-        assertEquals(1, greece.tradeRequests.size)
+        assertTrue(greece.tradeRequests.isEmpty()) // Mandatory loss revokes the unfunded proposal.
+        assertTrue(rome.invalidatedTradeCommitments.containsKey(request.requestId))
+        assertFalse(receiver.tryReject(request))
         rome.addGold(1)
-        request.trade.ourOffers.single().duration++
-        assertFalse(receiver.tryAccept(request))
-        assertTrue(receiver.tryReject(request))
+        activate(rome)
+        assertTrue(operations.tryPropose(greece, listOf(peace(), gold(100)), listOf(peace())))
+        activate(greece)
+        val replacement = greece.tradeRequests.single()
+        replacement.trade.ourOffers.single().duration++
+        assertFalse(receiver.tryAccept(replacement))
+        assertTrue(receiver.tryReject(replacement))
         assertTrue(greece.tradeRequests.isEmpty())
         assertEquals(3, rome.getDiplomacyManager(greece)!!.getFlag(DiplomacyFlags.DeclinedPeace))
         assertFalse(receiver.tryReject(request))

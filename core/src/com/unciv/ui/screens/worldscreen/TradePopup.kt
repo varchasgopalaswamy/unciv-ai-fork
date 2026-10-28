@@ -94,7 +94,7 @@ class TradePopup(worldScreen: WorldScreen) : Popup(worldScreen) {
             close()
             TradeThanksPopup(leaderIntroTable, worldScreen, peaceOperations.acceptancePopupContent(requestingCiv))
         }.apply {
-            if (!canAct() || operations.invalidReason(trade) != null) actor.disable()
+            if (!canAct() || operations.invalidReason(trade, tradeRequest.requestId) != null) actor.disable()
         }.row()
 
         addButton("Not this time.", 'n') {

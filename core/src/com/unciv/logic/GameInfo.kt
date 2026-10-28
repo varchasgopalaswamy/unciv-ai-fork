@@ -856,6 +856,15 @@ class GameInfo : IsPartOfGameInfoSerialization, HasGameInfoSerializationVersion 
         migrateToTileHistory()
         migrateGreatGeneralPools()
         ensureUnitIds()
+        // Legacy saves have native requests but no explicit asset allocations.
+        for (recipient in civilizations)
+            for (request in recipient.tradeRequests.toList()) {
+                val author = civilizations.firstOrNull { it.civID == request.requestingCiv } ?: continue
+                if (request.requestId.isEmpty()) request.requestId = java.util.UUID.randomUUID().toString()
+                if (author.tradeCommitments.none { it.id == request.requestId } &&
+                    !com.unciv.logic.trade.TradeOperations(author, recipient).tryReserve(request.trade.reverse(), request.requestId, nativeRequest = true))
+                    recipient.tradeRequests.remove(request)
+            }
     }
 
     fun setGlobalTransients() {

@@ -82,7 +82,7 @@ class PlayerCityStateOperations(private val civ: Civilization, private val spect
         for (amount in listOf(250, 500, 1000)) {
             val influence = functions.influenceGainedByGift(civ, amount)
             add("giftGold$amount", Kind.GiftGold, "Gift [$amount] gold (+[$influence] influence)",
-                peaceReasons().apply { if (civ.gold < amount) add("Not enough Gold.") }, -amount, influence.toFloat()) {
+                peaceReasons().apply { if (civ.availableGold() < amount) add("Not enough Gold.") }, -amount, influence.toFloat()) {
                 functions.receiveGoldGift(civ, amount)
             }
         }
@@ -95,7 +95,7 @@ class PlayerCityStateOperations(private val civ: Civilization, private val spect
                     !tile.improvementFunctions.canBuildImprovement(improvement, other.state)) continue
                 val reasons = reasons(other).apply {
                     if (theirs.getInfluence() < 60) add("Requires at least [60] Influence.")
-                    if (civ.gold < 200) add("Not enough Gold.")
+                    if (civ.availableGold() < 200) add("Not enough Gold.")
                 }
                 val name = "giftImprovement:${tile.position.x}:${tile.position.y}:${improvement.name}"
                 add(name, Kind.GiftImprovement, "Build [${improvement.name}] on [${resource.name}] (200 Gold)",

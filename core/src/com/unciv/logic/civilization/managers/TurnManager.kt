@@ -84,7 +84,7 @@ class TurnManager(val civInfo: Civilization) {
 
         for (tradeRequest in civInfo.tradeRequests.toList()) { // remove trade requests where one of the sides can no longer supply
             val offeringCiv = civInfo.gameInfo.getCivilization(tradeRequest.requestingCiv)
-            if (offeringCiv.isDefeated() || TradeOperations(civInfo, offeringCiv).invalidReason(tradeRequest.trade) != null) {
+            if (offeringCiv.isDefeated() || TradeOperations(civInfo, offeringCiv).invalidReason(tradeRequest.trade, tradeRequest.requestId) != null) {
                 civInfo.tradeRequests.remove(tradeRequest)
                 // Yes, this is the right direction. I checked.
                 offeringCiv.addNotification("Our proposed trade is no longer relevant!", NotificationCategory.Trade, NotificationIcon.Trade)

@@ -9,6 +9,7 @@ import yairm210.purity.annotations.Readonly
 open class ForeignCivView(protected open val civ: Civilization, viewer: Civilization, spectatorMode: Boolean = false, gameView: GameView) : GameBasedView<Civilization>(civ, viewer, spectatorMode, gameView) {
     val civName: String get() = civ.civName
     val gold: Int get() = civ.gold
+    @Readonly fun availableGold(): Int = civ.availableGold()
     val ruleset = civ.gameInfo.ruleset
 
     // Navigation

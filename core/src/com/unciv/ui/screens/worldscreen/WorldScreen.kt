@@ -461,7 +461,7 @@ class WorldScreen(
                 viewingCiv.tradeRequests.isNotEmpty() -> {
                     // In the meantime this became invalid, perhaps because we accepted previous trades
                     for (tradeRequest in viewingCiv.tradeRequests.toList())
-                        if (TradeOperations(viewingCiv, gameInfo.getCivilization(tradeRequest.requestingCiv)).invalidReason(tradeRequest.trade) != null)
+                        if (TradeOperations(viewingCiv, gameInfo.getCivilization(tradeRequest.requestingCiv)).invalidReason(tradeRequest.trade, tradeRequest.requestId) != null)
                             viewingCiv.tradeRequests.remove(tradeRequest)
 
                     if (viewingCiv.tradeRequests.isNotEmpty()) // if a valid one still exists

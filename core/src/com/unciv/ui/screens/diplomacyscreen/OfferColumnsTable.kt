@@ -42,7 +42,7 @@ class OfferColumnsTable(
     ) {
         if (!canEdit()) return
         when (offer.type) {
-            TradeOfferType.Gold -> openGoldSelectionPopup(offer, list, civ.gold)
+            TradeOfferType.Gold -> openGoldSelectionPopup(offer, list, civ.availableGold())
             TradeOfferType.Gold_Per_Turn -> openGoldSelectionPopup(offer, list, civ.getGoldPerTurn())
             else -> addOffer(if (invert) offer.copy(amount = -offer.amount) else offer, list, counterList)
         }

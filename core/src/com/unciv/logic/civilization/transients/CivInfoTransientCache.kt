@@ -414,6 +414,7 @@ class CivInfoTransientCache(val civInfo: Civilization) {
         civInfo.detailedCivResources = newDetailedCivResources
         civInfo.summarizedCivResourceSupply = summarizedResourceSupply
         civInfo.civResourcesUniqueMap = newResourceUniqueMap
+        com.unciv.logic.trade.TradeCommitment.reconcileResources(civInfo)
 
         civInfo.updateStatsForNextTurn() // More or less resources = more or less happiness, with potential domino effects
     }

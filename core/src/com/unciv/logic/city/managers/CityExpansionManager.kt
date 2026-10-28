@@ -68,7 +68,9 @@ class CityExpansionManager : IsPartOfGameInfoSerialization {
         }
     }
 
-    fun buyTile(tile: Tile) {
+    fun buyTile(tile: Tile) = synchronized(city.civ.gameInfo) { buyTileLocked(tile) }
+
+    private fun buyTileLocked(tile: Tile) {
         val goldCost = getGoldCostOfTile(tile)
 
         class TriedToBuyNonContiguousTileException(msg: String) : Exception(msg)
@@ -76,7 +78,7 @@ class CityExpansionManager : IsPartOfGameInfoSerialization {
             throw TriedToBuyNonContiguousTileException("$city tried to buy $tile, but it owns none of the neighbors")
 
         class NotEnoughGoldToBuyTileException(msg: String) : Exception(msg)
-        if (city.civ.gold < goldCost && !city.civ.gameInfo.gameParameters.godMode)
+        if (city.civ.availableGold() < goldCost && !city.civ.gameInfo.gameParameters.godMode)
             throw NotEnoughGoldToBuyTileException("$city tried to buy $tile, but lacks gold (cost $goldCost, has ${city.civ.gold})")
 
         city.civ.addGold(-goldCost)

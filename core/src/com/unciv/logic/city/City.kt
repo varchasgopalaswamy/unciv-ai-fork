@@ -344,7 +344,7 @@ class City : IsPartOfGameInfoSerialization, INamed {
     fun hasStatToBuy(stat: Stat, price: Int): Boolean = when {
         civ.gameInfo.gameParameters.godMode -> true
         price == 0 -> true
-        else -> getStatReserve(stat) >= price
+        else -> (if (stat == Stat.Gold) civ.availableGold() else getStatReserve(stat)) >= price
     }
 
     @Readonly internal fun getMaxHealth() = 200 + cityConstructions.getBuiltBuildings().sumOf { it.cityHealth }

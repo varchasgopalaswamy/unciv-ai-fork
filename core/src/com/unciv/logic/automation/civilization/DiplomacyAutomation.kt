@@ -1,5 +1,6 @@
 package com.unciv.logic.automation.civilization
 
+import com.unciv.logic.trade.TradeOperations
 import com.unciv.Constants
 import com.unciv.logic.automation.Automation
 import com.unciv.logic.automation.ThreatLevel
@@ -160,7 +161,7 @@ object DiplomacyAutomation {
                     // else let them make counter offer
                 }
                 
-                otherCiv.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
+                TradeOperations.enqueue(otherCiv, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
             }
             else {
                 // Remember this for a few turns to save computation power
@@ -193,7 +194,7 @@ object DiplomacyAutomation {
                 tradeLogic.currentTrade.ourOffers.add(TradeOffer(Constants.openBorders, TradeOfferType.Agreement, speed = civInfo.gameInfo.speed))
                 tradeLogic.currentTrade.theirOffers.add(TradeOffer(Constants.openBorders, TradeOfferType.Agreement, speed = civInfo.gameInfo.speed))
 
-                otherCiv.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
+                TradeOperations.enqueue(otherCiv, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
             } else {
                 // Remember this for a few turns to save computation power
                 civInfo.getDiplomacyManager(otherCiv)!!.setFlag(DiplomacyFlags.DeclinedOpenBorders, 5)
@@ -265,7 +266,7 @@ object DiplomacyAutomation {
 
             tradeLogic.currentTrade.ourOffers.add(tradeOffer)
             tradeLogic.currentTrade.theirOffers.add(tradeOffer)
-            otherCiv.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
+            TradeOperations.enqueue(otherCiv, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
         }
     }
 
@@ -292,7 +293,7 @@ object DiplomacyAutomation {
 
                 tradeLogic.currentTrade.ourOffers.add(tradeOffer)
                 tradeLogic.currentTrade.theirOffers.add(tradeOffer)
-                otherCiv.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
+                TradeOperations.enqueue(otherCiv, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
             } else {
                 // Remember this for a few turns to save computation power
                 civInfo.getDiplomacyManager(otherCiv)!!.setFlag(DiplomacyFlags.DeclinedDefensivePact, 5)
@@ -447,7 +448,7 @@ object DiplomacyAutomation {
                 }
             }
 
-            enemy.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
+            TradeOperations.enqueue(enemy, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
         }
     }
 
@@ -469,7 +470,7 @@ object DiplomacyAutomation {
             val tradeLogic = TradeLogic(civInfo, civToAsk)
             // TODO: add gold offer here
             tradeLogic.currentTrade.theirOffers.add(TradeOffer(enemyCiv.civID, TradeOfferType.WarDeclaration, speed = civInfo.gameInfo.speed))
-            civToAsk.tradeRequests.add(TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
+            TradeOperations.enqueue(civToAsk, TradeRequest(civInfo.civID, tradeLogic.currentTrade.reverse()))
         }
     }
 
