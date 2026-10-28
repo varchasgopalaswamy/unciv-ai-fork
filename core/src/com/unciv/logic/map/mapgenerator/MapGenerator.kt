@@ -202,7 +202,10 @@ class MapGenerator(val ruleset: Ruleset, private val coroutineScope: CoroutineSc
         convertTerrains(map.values)
 
         // Region based map generation - not used when generating maps in map editor
-        val civilizations = gameInfo?.civilizations
+        // Seeded placement must not depend on turn order or which nations are human/AI.
+        val civilizations = gameInfo?.civilizations?.let {
+            if (gameParameters.startingPositionSeed == null) it else it.sortedBy { civ -> civ.civID }
+        }
         val isMapEditor = civilizations?.isEmpty() ?: true
         if (! isMapEditor) {
             map.gameInfo = gameInfo

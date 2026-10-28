@@ -34,6 +34,8 @@ class GameParameters : IsPartOfGameInfoSerialization { // Default values are the
     var shufflePlayerOrder = false
 
     /** Optional seed for new-game civilization selection, starting positions and nearby resources.
+     * For a fixed roster, placement is independent of player order and human/AI assignments.
+     * Native start biases and controller-dependent starting bonuses still apply.
      * Independent of the map terrain seed and of randomness during subsequent turns. */
     var startingPositionSeed: Long? = null
 

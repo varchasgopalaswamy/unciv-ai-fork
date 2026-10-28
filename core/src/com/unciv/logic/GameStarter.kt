@@ -31,7 +31,8 @@ import yairm210.purity.annotations.Readonly
  *
  * Map terrain uses the map seed. Civilization selection, starting positions and resource placement
  * use GameParameters.startingPositionSeed when provided, otherwise per-game randomness.
- * Reproducing a starting position requires both seeds, the same rules and the same setup.
+ * Seeded placement uses civilization identity rather than player order or human/AI assignments.
+ * Reproducing a starting position requires both seeds, the same rules, civilization roster and other setup options.
  */
 class GameStarter private constructor(
     private val gameSetupInfo: GameSetupInfo
@@ -390,7 +391,10 @@ class GameStarter private constructor(
         for (tile in tileMap.values) {
             startScores[tile] = tile.stats.getTileStartScore(cityCenterMinStats)
         }
-        val allCivs = gameInfo.civilizations.filter { !it.isBarbarian }
+        // Keep placement and starting-unit collision resolution independent of turn order.
+        val allCivs = gameInfo.civilizations.filter { !it.isBarbarian }.let {
+            if (gameInfo.gameParameters.startingPositionSeed == null) it else it.sortedBy { civ -> civ.civID }
+        }
         val landTilesInBigEnoughGroup = getCandidateLand(allCivs.size, startScores)
 
         // First we get start locations for the major civs, on the second pass the city states (without predetermined starts) can squeeze in wherever
@@ -408,7 +412,7 @@ class GameStarter private constructor(
         val startingLocations = getStartingLocations(allCivs, landTilesInBigEnoughGroup, startScores)
 
         // no starting units for Barbarians and Spectators
-        determineStartingUnitsAndLocations(gameInfo, startingLocations, ruleSet)
+        determineStartingUnitsAndLocations(allCivs, startingLocations, ruleSet)
     }
 
     private fun removeAncientRuinsNearStartingLocation(startingLocation: Tile) {
@@ -420,14 +424,14 @@ class GameStarter private constructor(
     }
 
     private fun determineStartingUnitsAndLocations(
-        gameInfo: GameInfo,
+        civs: List<Civilization>,
         startingLocations: HashMap<Civilization, Tile>,
         ruleset: Ruleset
     ) {
         val startingEra = gameInfo.gameParameters.startingEra
         val settlerLikeUnits = ruleset.units.filter { it.value.isCityFounder() }
 
-        for (civ in gameInfo.civilizations.filter { !it.isBarbarian && !it.isSpectator() }) {
+        for (civ in civs.filter { !it.isSpectator() }) {
             val startingLocation = startingLocations[civ]!!
 
             removeAncientRuinsNearStartingLocation(startingLocation)

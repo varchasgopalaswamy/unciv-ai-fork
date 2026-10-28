@@ -73,6 +73,33 @@ class GameStartingPositionSeedTest {
             "${it.hasBottomRiver}:${it.hasBottomLeftRiver}:${it.hasBottomRightRiver}"
     }
 
+    private fun starts(game: GameInfo) = game.civilizations
+        .filter { !it.isBarbarian && !it.isSpectator() }
+        .associate { civ ->
+            civ.civID to civ.units.getCivUnits().single { it.baseUnit.isCityFounder() }.getTile().position
+        }
+
+    @Test
+    fun `seeded civilization starts and resources ignore player order and controller assignments`() {
+        for (mapType in listOf(MapType.pangaea, MapType.archipelago)) {
+            for (seed in listOf(17L, 18L, 19L)) {
+                val first = create(seed, mapType = mapType)
+                for (players in listOf(
+                    arrayListOf(Player("Rome", PlayerType.Human), Player("Egypt"), Player("France"), Player("Greece")),
+                    arrayListOf(Player("France", PlayerType.Human), Player("Egypt"), Player("Greece"), Player("Rome")),
+                    arrayListOf("Egypt", "France", "Greece", "Rome").mapTo(arrayListOf()) { Player(it, PlayerType.Human) }
+                )) {
+                    val second = create(seed, mapType = mapType) { it.players = players }
+                    assertEquals("Civilization starts on $mapType with seed $seed", starts(first), starts(second))
+                    assertEquals("Tiles and resources on $mapType with seed $seed", tiles(first), tiles(second))
+                    assertEquals(players.first().chosenCiv, second.currentPlayer)
+                    for (player in players)
+                        assertEquals(player.playerType, second.getCivilization(player.chosenCiv).playerType)
+                }
+            }
+        }
+    }
+
     @Test
     fun `same seeds reproduce generated positions and resources with distinct game identities`() {
         for (mapType in listOf(MapType.pangaea, MapType.archipelago)) {
@@ -115,14 +142,16 @@ class GameStartingPositionSeedTest {
             tile.airUnits.clear()
         }
         MapSaver.saveMap("placement-test", original.tileMap)
-        fun fromMap(): GameInfo {
+        fun fromMap(reversePlayers: Boolean = false): GameInfo {
             val setup = GameSetupInfo(original).apply {
                 mapParameters.name = "placement-test"
                 mapFile = UncivGame.Current.files.getLocalFile("maps/placement-test")
+                if (reversePlayers) gameParameters.players.reverse()
             }
             return GameStarter.startNewGame(setup)
         }
         assertEquals(units(fromMap()), units(fromMap()))
+        assertEquals(starts(fromMap()), starts(fromMap(reversePlayers = true)))
     }
 
     @Test
