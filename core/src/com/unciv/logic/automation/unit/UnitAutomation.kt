@@ -3,6 +3,7 @@ package com.unciv.logic.automation.unit
 import com.unciv.GUI
 import com.unciv.UncivGame
 import com.unciv.logic.automation.Automation
+import com.unciv.logic.automation.AutomationSelection
 import com.unciv.logic.battle.Battle
 import com.unciv.logic.battle.BattleDamage
 import com.unciv.logic.battle.CityCombatant
@@ -23,7 +24,6 @@ import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActionsPillage
 import com.unciv.ui.screens.worldscreen.unit.actions.UnitActionsUpgrade
-import kotlin.math.ceil
 import yairm210.purity.annotations.Readonly
 import com.unciv.logic.automation.Timers.Companion.timeThis
 import com.unciv.logic.automation.civilization.NextTurnAutomation
@@ -142,7 +142,7 @@ object UnitAutomation {
                 unit.movement.getDistanceToTiles().keys.filter { isGoodTileToExplore(unit, it, unitVisibilityRange) }
         if (explorableTilesThisTurn.any()) {
             val bestTile = explorableTilesThisTurn
-                .maxBy { it.tileHeight + it.getTilesAtDistance(unit.getVisibilityRange()).count { tile -> !tile.isExplored(unit.civ) }}
+                .maxBy { AutomationSelection.explorationRank(it.tileHeight, it.getTilesAtDistance(unit.getVisibilityRange()).count { tile -> !tile.isExplored(unit.civ) }) }
             // Assign each tile a score for "explore value"
             // This could be more elaborate: for example add a malus for distant tiles such as to move not too far away from capital (barb control)
             // or bonus according to tile yields (likely candidates for city locations), but this comes at a cost of performance
@@ -232,7 +232,7 @@ object UnitAutomation {
 
         val upgradeUnits = getUnitsToUpgradeTo(unit)
         if (upgradeUnits.none()) return false // for resource reasons, usually
-        val upgradedUnit = upgradeUnits.minBy { it.cost }
+        val upgradedUnit = AutomationSelection.upgrade(upgradeUnits.map { AutomationSelection.Costed(it, it.cost) }.toList()) ?: return false
 
         if (upgradedUnit.getResourceRequirementsPerTurn(unit.cache.state).keys.any { !unit.requiresResource(it) }) {
             // The upgrade requires new resource types, so check if we are willing to invest them
@@ -430,8 +430,8 @@ object UnitAutomation {
             && unit.civ.threatManager.getDistanceToClosestEnemyUnit(unit.getTile(), noEnemyDistance) <= noEnemyDistance) return false
 
         // Round up, otherwise e.g. 99 health over 2 turns would give 0 required healing per turn
-        val healthRequiredPerTurn = ceil((100 - unit.health).toFloat() / turns).toInt()
-        return healthRequiredPerTurn <= unit.rankTileForHealing(unit.getTile())
+        return AutomationSelection.canRest(unit.health, unit.rankTileForHealing(unit.getTile()), turns,
+            false, true, noEnemyDistance + 1, noEnemyDistance)
     }
 
     @Readonly
@@ -487,13 +487,14 @@ object UnitAutomation {
                 unit.getTile().position,
                 unit.getMaxMovement() * CLOSE_ENEMY_TURNS_AWAY_LIMIT
         )
-        val closeEnemy = TargetHelper.getAttackableEnemies(unit, unitDistanceToTiles, tilesToCheck = unit.getTile().getTilesInDistance(CLOSE_ENEMY_TILES_AWAY_LIMIT).toList())
+        val closeEnemies = TargetHelper.getAttackableEnemies(unit, unitDistanceToTiles, tilesToCheck = unit.getTile().getTilesInDistance(CLOSE_ENEMY_TILES_AWAY_LIMIT).toList())
             .filterNot { unit.baseUnit.isRanged() && it.tileToAttack.isCityCenter() && it.tileToAttack.getCity()!!.health == 1 } // occurs fairly often probably because AI dumb
             .filter { unit.getDamageFromTerrain(it.tileToAttackFrom) <= 0 }  // Don't attack from a mountain or near enemy citadels
             .filter {
             // Ignore units that would 1-shot you if you attacked
             BattleDamage.calculateDamageToAttacker(MapUnitCombatant(unit), Battle.getMapCombatantOfTile(it.tileToAttack)!!) < unit.health }
-            .minByOrNull { it.tileToAttack.aerialDistanceTo(unit.getTile()) }
+            .map { com.unciv.logic.automation.AutomationSelection.NearbyEnemy(it, it.tileToAttack.aerialDistanceTo(unit.getTile())) }
+        val closeEnemy = com.unciv.logic.automation.AutomationSelection.closestEnemy(closeEnemies.toList())
 
         if (closeEnemy != null) {
             unit.movement.headTowards(closeEnemy.tileToAttackFrom)
@@ -601,7 +602,7 @@ object UnitAutomation {
             .filterNot { it is MapUnitCombatant && it.isCivilian() }
             // Don't bombard civilians (they're more efficiently captured/killed by military units if they're indeed this close)
         if (targets.none()) return null
-        return targets.maxByOrNull { BattleDamage.calculateDamageToDefender(CityCombatant(city), it) }
+        return AutomationSelection.highest(targets.map { AutomationSelection.Ranked(it, BattleDamage.calculateDamageToDefender(CityCombatant(city), it).toFloat()) }.toList())
     }
 
     private fun tryTakeBackCapturedCity(unit: MapUnit): Boolean {

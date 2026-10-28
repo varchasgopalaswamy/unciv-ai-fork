@@ -42,7 +42,10 @@ class TestGame(vararg addGlobalUniques: String, forUITesting: Boolean = false) {
 
     private var objectsCreated = 0
     val ruleset: Ruleset
-    val gameInfo = GameInfo()
+    val gameInfo = GameInfo().apply {
+        // Keep serialization independent of Json's clock-based prototype defaults.
+        currentTurnStartTime = 1L
+    }
     /** [tileMap] has a default size of 1 tile, use [makeHexagonalMap] or [makeRectangularMap] to change that */
     val tileMap
         get() = gameInfo.tileMap
@@ -79,6 +82,9 @@ class TestGame(vararg addGlobalUniques: String, forUITesting: Boolean = false) {
         // Create a tilemap, needed for city centers
         gameInfo.tileMap = TileMap(0, ruleset, false)
         tileMap.mapParameters.mapSize = MapSize(0)
+        // A timestamp seed can equal Json's freshly constructed prototype in
+        // one serialization but not the next, causing false purity failures.
+        tileMap.mapParameters.seed = 1L
         tileMap.ruleset = ruleset
         tileMap.gameInfo = gameInfo
 
@@ -100,6 +106,7 @@ class TestGame(vararg addGlobalUniques: String, forUITesting: Boolean = false) {
     fun makeRectangularMap(newHeight: Int, newWidth: Int, baseTerrain: String = Constants.desert) {
         val newTileMap = TileMap(newWidth, newHeight, ruleset, tileMap.mapParameters.worldWrap)
         newTileMap.mapParameters.mapSize = MapSize(newWidth, newHeight)
+        newTileMap.mapParameters.seed = 1L
 
         for (row in tileMap.tileMatrix)
             for (tile in row)
@@ -116,6 +123,7 @@ class TestGame(vararg addGlobalUniques: String, forUITesting: Boolean = false) {
     fun makeHexagonalMap(newRadius: Int, baseTerrain: String = Constants.desert) {
         val newTileMap = TileMap(newRadius, ruleset, false)
         newTileMap.mapParameters.mapSize = MapSize(newRadius)
+        newTileMap.mapParameters.seed = 1L
 
         for (row in tileMap.tileMatrix)
             for (tile in row)

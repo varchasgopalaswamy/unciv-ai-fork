@@ -2,10 +2,10 @@ package com.unciv.logic.automation.unit
 
 import com.unciv.Constants
 import com.unciv.logic.automation.Automation
+import com.unciv.logic.automation.AutomationSelection
 import com.unciv.logic.city.City
 import com.unciv.logic.civilization.Civilization
 import com.unciv.logic.civilization.diplomacy.DiplomacyFlags
-import com.unciv.logic.map.HexMath
 import com.unciv.logic.map.mapunit.MapUnit
 import com.unciv.logic.map.tile.Tile
 import com.unciv.models.ruleset.tile.ResourceType
@@ -101,9 +101,6 @@ object CityLocationTileRanker {
 
     private fun rankTileToSettle(newCityTile: Tile, civ: Civilization, nearbyCities: Sequence<City>,
                                  baseTileMap: HashMap<Tile, Float>, unexploredTilePrior: Float = 0f): Float {
-        var tileValue = 0f
-        tileValue += getDistanceToCityModifier(newCityTile, nearbyCities, civ)
-
         val onCoast = newCityTile.isAdjacentToCoast()
         val onHill = newCityTile.isHill()
         val isNextToMountain = newCityTile.isAdjacentTo(Constants.mountain)
@@ -113,41 +110,20 @@ object CityLocationTileRanker {
         // Only count a luxury resource that we don't have yet as unique once
         val newUniqueLuxuryResources = HashSet<TileResource>()
 
-        if (onCoast) tileValue += 3
-        // Hills are free production and defence
-        if (onHill) tileValue += 14
-        // Observatories are good, but current implementation not mod-friendly
-        if (isNextToMountain) tileValue += 5
-        // This bonus for settling on river is a bit outsized for the importance, but otherwise they have a habit of settling 1 tile away
-        if (newCityTile.isAdjacentToRiver()) tileValue += 20
-        // We want to found the city on an oasis because it can't be improved otherwise
-        if (unImprovable) tileValue += 3
-
         val resource = newCityTile.tileResource
-        if (civ.canSeeResource(resource)) {
-            tileValue -= 4
-            // Settling on bonus resources tends to waste a food
-            if (resource.resourceType == ResourceType.Bonus) tileValue -= 8
-            // Build on jungle luxuries for tempo
-            if (resource.resourceType == ResourceType.Luxury &&
+        val hasResource = civ.canSeeResource(resource)
+        val jungleLuxury = hasResource && resource.resourceType == ResourceType.Luxury &&
                 newCityTile.lastTerrain.hasUnique(UniqueType.Vegetation) &&
                 !newCityTile.lastTerrain.hasUnique(UniqueType.ProductionBonusWhenRemoved)
-                ) tileValue += 10
+        val rings = (0..2).map { distance ->
+            newCityTile.getTilesAtDistance(distance).map { nearbyTile ->
+                rankTile(nearbyTile, civ, onCoast, newUniqueLuxuryResources, baseTileMap, unexploredTilePrior)
+            }.toList()
         }
-
-        var tiles = 0
-        for (i in 0..2) {
-            //Ideally, we shouldn't really count the center tile, as it's converted into 1 production 2 food anyways with special cases treated above, but doing so can lead to AI moving settler back and forth until forever
-            for (nearbyTile in newCityTile.getTilesAtDistance(i)) {
-                tiles++
-                tileValue += rankTile(nearbyTile, civ, onCoast, newUniqueLuxuryResources, baseTileMap, unexploredTilePrior) * (3f / (i + 1))
-                //Tiles close to the city can be worked more quickly, and thus should gain higher weight.
-            }
-        }
-
-        // Placing cities on the edge of the map is bad, we can't even build improvements on them!
-        tileValue -= (HexMath.getNumberOfTilesInHexagon(2) - tiles) * 2.4f
-        return tileValue
+        return AutomationSelection.settlement(AutomationSelection.Settlement(
+            0, getDistanceToCityModifier(newCityTile, nearbyCities, civ), onCoast, onHill, isNextToMountain,
+            newCityTile.isAdjacentToRiver(), unImprovable, hasResource,
+            hasResource && resource.resourceType == ResourceType.Bonus, jungleLuxury, rings))
     }
 
     @Readonly
@@ -155,25 +131,9 @@ object CityLocationTileRanker {
         var modifier = 0f
         for (city in nearbyCities) {
             val distanceToCity = newCityTile.aerialDistanceTo(city.getCenterTile())
-            var distanceToCityModifier = when {
-                // NOTE: the line it.getCenterTile().aerialDistanceTo(unit.getTile()) <= X + range
-                // above MUST have the constant X that is added to the range be higher or equal to the highest distance here + 1
-                // If it is not higher the settler may get stuck when it ranks the same tile differently
-                // as it moves away from the city and doesn't include it in the calculation
-                // and values it higher than when it moves closer to the city
-                distanceToCity == 7 -> 2f
-                distanceToCity == 6 -> 4f
-                distanceToCity == 5 -> 8f // Settling further away sacrifices tempo
-                distanceToCity == 4 -> 6f
-                distanceToCity == 3 -> -25f
-                distanceToCity < 3 -> -30f // Even if it is a mod that lets us settle closer, lets still not do it
-                else -> 0f
-            }
             // We want a defensive ring around our capital
-             if (city.civ == civ) { 
-                distanceToCityModifier *= if (city.isCapital()) 2 else 1
-                modifier += distanceToCityModifier
-            }
+            if (city.civ == civ)
+                modifier += AutomationSelection.cityDistanceValue(distanceToCity, city.isCapital())
         }
         return modifier
     }

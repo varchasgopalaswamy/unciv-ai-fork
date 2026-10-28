@@ -28,15 +28,15 @@ import kotlin.math.min
 object Automation {
 
     @Readonly
-    fun rankTileForCityWork(tile: Tile, city: City): Float {
+    fun rankTileForCityWork(tile: Tile, city: City, nativePreferences: Boolean = false): Float {
         val stats = tile.stats.getTileStats(city, city.civ)
-        return rankStatsForCityWork(stats, city, false)
+        return rankStatsForCityWork(stats, city, false, nativePreferences)
     }
 
     @Readonly
-    fun rankSpecialist(specialist: String, city: City): Float {
+    fun rankSpecialist(specialist: String, city: City, nativePreferences: Boolean = false): Float {
         val stats = city.cityStats.getStatsOfSpecialist(specialist)
-        var rank = rankStatsForCityWork(stats, city, true)
+        var rank = rankStatsForCityWork(stats, city, true, nativePreferences)
         // derive GPP score
         var gpp = 0f
         if (city.getRuleset().specialists.containsKey(specialist)) { // To solve problems in total remake mods
@@ -50,12 +50,12 @@ object Automation {
 
     // More complicated logic to properly weigh Food vs other Stats (esp Production)
     @Readonly
-    private fun getFoodModWeight(city: City, surplusFood: Float): Float {
+    private fun getFoodModWeight(city: City, surplusFood: Float, nativePreferences: Boolean = false): Float {
         val speed = city.civ.gameInfo.speed.modifier
         // Zero out Growth if close to Unhappiness limit
         if (city.civ.getHappiness() < -8)
             return 0f
-        if (city.civ.isAI()) {
+        if (nativePreferences || city.civ.isAI()) {
             // Value 1 Growth at less than 2 Production, but above 1 Production + 1 Gold
             return 1.5f
         }
@@ -72,7 +72,7 @@ object Automation {
     }
 
     @Readonly
-    fun rankStatsForCityWork(stats: Stats, city: City, areWeRankingSpecialist: Boolean): Float
+    fun rankStatsForCityWork(stats: Stats, city: City, areWeRankingSpecialist: Boolean, nativePreferences: Boolean = false): Float
         = timeThis("Automation.rankStatsForCityWork") {
         val cityAIFocus = city.getCityFocus()
         @LocalState val yieldStats = stats.clone()
@@ -148,7 +148,7 @@ object Automation {
             }
             newGrowthFood = newGrowthFood.coerceAtLeast(0f) // floor to 0 for safety
             
-            yieldStats.food += newGrowthFood * foodBaseWeight * getFoodModWeight(city, surplusFood)
+            yieldStats.food += newGrowthFood * foodBaseWeight * getFoodModWeight(city, surplusFood, nativePreferences)
         }
 
         if (city.population.population < 10) {
@@ -507,23 +507,8 @@ object Automation {
 
     @Readonly
     fun rankStatsValue(stats: Stats, civInfo: Civilization): Float {
-        var rank = 0.0f
-        rank += stats.food * 1.2f //food get more value to keep city growing
-
-        rank += if (civInfo.gold < 0 && civInfo.stats.statsForNextTurn.gold <= 0)
-                    stats.gold //build more gold infrastructure if in serious gold problems
-        // This could lead to oscilliatory behaviour however: gold problem -> build trade post -> no gold problem -> replace trade posts -> gold problem
-                else
-                    stats.gold / 3 // Gold is valued less than is the case for citizen assignment,
-        //otherwise the AI would replace tiles with trade posts upon entering a golden age,
-        //and replace the trade post again when the golden age ends.
-        // We need a way to take golden age gold into account before the GA actually takes place
-        rank += stats.happiness
-        rank += stats.production
-        rank += stats.science
-        rank += stats.culture
-        rank += stats.faith
-        return rank
+        return AutomationSelection.statsValue(stats.food, stats.production, stats.gold, stats.science,
+            stats.culture, stats.happiness, stats.faith, civInfo.gold, civInfo.stats.statsForNextTurn.gold)
     }
 }
 

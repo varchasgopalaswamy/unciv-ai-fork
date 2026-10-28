@@ -198,7 +198,9 @@ class CityPopulationManager : IsPartOfGameInfoSerialization {
             val valueBestSpecialist = bestJobAndRank?.value ?: 0f
 
             //assign population
-            if (valueBestTile > valueBestSpecialist) {
+            if (com.unciv.logic.automation.AutomationSelection.citizen(
+                    if (bestTile == null) emptyList() else listOf(com.unciv.logic.automation.AutomationSelection.Citizen(true, valueBestTile, bestTile.longitude, bestTile.latitude)),
+                    if (bestJob == null) emptyList() else listOf(com.unciv.logic.automation.AutomationSelection.Ranked(false, valueBestSpecialist))) == true) {
                 if (bestTile != null) {
                     city.workTile(bestTile)
                     cityStats.food += tileStats[bestTile]!!.food

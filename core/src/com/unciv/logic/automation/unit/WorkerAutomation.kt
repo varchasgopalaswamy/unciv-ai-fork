@@ -439,35 +439,18 @@ class WorkerAutomation(
         }
 
         // After gathering all the data, we conduct the hierarchy in one place
-        val finalImprovement = when {
-            bestBuildableImprovement != null && bestBuildableImprovement.isRoad() -> bestBuildableImprovement
-            
-            // For bonus resources we just want the highest-yield improvement, not necessarily the resource-yielding improvement
-            improvementForResource != null && resource!!.resourceType != ResourceType.Bonus ->
-                if (improvementForResource == currentImprovement) null else improvementForResource
-            
-            // If this is a resource that HAS an improvement that we can see, but this unit can't build it, don't waste your time
-            resource.let {
-                civInfo.canSeeResource(it) &&
-                    it.resourceType != ResourceType.Bonus &&
-                    it.getImprovements().any()
-            } -> return null
-            
-            bestBuildableImprovement == null -> null
-
-            tile.improvement != null &&
-                    getImprovementRanking(tile, unit, tile.tileImprovement!!, null, ignoreImprovements + potentialTileImprovements.values)
-                    > getImprovementRanking(tile, unit, bestBuildableImprovement, null, ignoreImprovements + potentialTileImprovements.values)
-                -> null // What we have is better, even if it's pillaged we should repair it
-
-            lastTerrain.let {
-                isRemovable(it) &&
-                    (Automation.rankStatsValue(it, civInfo) < 0 || it.hasUnique(UniqueType.NullifyYields))
-            } -> potentialTileImprovements[Constants.remove + lastTerrain.name]
-
-            else -> bestBuildableImprovement
+        val resourceRequired = resource.let {
+            civInfo.canSeeResource(it) && it.resourceType != ResourceType.Bonus && it.getImprovements().any()
         }
-        return finalImprovement
+        val compareCurrent = currentImprovement != null && bestBuildableImprovement != null &&
+            !bestBuildableImprovement.isRoad() && !resourceRequired
+        val currentRank = if (compareCurrent) getImprovementRanking(tile, unit, currentImprovement!!, null, ignoreImprovements + potentialTileImprovements.values) else 0f
+        val bestRank = if (compareCurrent) getImprovementRanking(tile, unit, bestBuildableImprovement!!, null, ignoreImprovements + potentialTileImprovements.values) else 0f
+        val removal = if (isRemovable(lastTerrain) && (Automation.rankStatsValue(lastTerrain, civInfo) < 0 || lastTerrain.hasUnique(UniqueType.NullifyYields)))
+            potentialTileImprovements[Constants.remove + lastTerrain.name] else null
+        return com.unciv.logic.automation.AutomationSelection.improvement(bestBuildableImprovement,
+            bestBuildableImprovement?.isRoad() == true, improvementForResource, currentImprovement,
+            resourceRequired, currentRank, bestRank, removal)
     }
 
     @Readonly
@@ -538,39 +521,16 @@ class WorkerAutomation(
         if (tile.getOwner() != unit.civ)
             stats.div(3f)
 
-        var value = Automation.rankStatsValue(stats, unit.civ)
+        val value = Automation.rankStatsValue(stats, unit.civ)
         // Calculate the bonus from gaining the resources, this isn't included in the stats above
         val resource = tile.tileResource
         val currentImprovement = tile.tileImprovement
-        if (resource != null) {
-            // A better resource ranking system might be required, we don't want the improvement
-            // ranking for resources to be too high
-            if (resource.resourceType != ResourceType.Bonus) {
-                // Always build the resource-specific improvement for luxuries and strategics,
-                // as it's nontrivial to tell when we won't need them
-                if (currentImprovement != null && resource.isImprovedBy(currentImprovement)) {
-                    value -= 2f
-                }
-                if (isResourceImprovedByNewImprovement) {
-                    value += 2f
-                }
-            } else {
-                // For bonus resources, we want to build just enough resource-specific improvements
-                // to unlock stone works and stables, otherwise farms are better
-                if (currentImprovement != null && tile.tileResource!!.isImprovedBy(currentImprovement)) {
-                    value -= 0.3f // enough to offset the 0.2f food vs production value difference
-                }
-                if (isResourceImprovedByNewImprovement && tile.getTilesInDistance(4).none { it.tileImprovement == improvement }) {
-                    value += 0.3f
-                }
-            }
-        }
-        if (currentImprovement != null && isImprovementProbablyAFort(currentImprovement)) {
-            // Replace/build improvements on other tiles before this one
-            // the old fort building logic was found to be detrimental (PR #14309), but let's keep the forts we got around for a bit
-            value /= 2
-        }
-        return value
+        return com.unciv.logic.automation.AutomationSelection.improvementValue(value,
+            resource?.let { it.resourceType == ResourceType.Bonus },
+            resource != null && currentImprovement != null && resource.isImprovedBy(currentImprovement),
+            isResourceImprovedByNewImprovement,
+            resource?.resourceType == ResourceType.Bonus && isResourceImprovedByNewImprovement && tile.getTilesInDistance(4).any { it.tileImprovement == improvement },
+            currentImprovement != null && isImprovementProbablyAFort(currentImprovement))
     }
 
     @Readonly

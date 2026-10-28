@@ -17,5 +17,6 @@ fun GameInfo.copyForPreview(): GameInfo = clone().also { copy ->
         if (city.cityConstructions.constructionQueue.isEmpty())
             city.cityConstructions.constructionQueue.add(PerpetualConstruction.Idle.name)
     }
-    copy.setTransients()
+    if (copy.currentPlayer.isEmpty()) copy.currentPlayer = copy.civilizations.first().civID
+    copy.setTransients(ruleset)
 }

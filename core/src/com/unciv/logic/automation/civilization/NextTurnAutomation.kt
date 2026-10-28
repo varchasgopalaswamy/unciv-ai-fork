@@ -432,12 +432,12 @@ object NextTurnAutomation {
         val stateForConditionals = unit.cache.state
         while (unit.promotions.canBePromoted()) {
             val promotions = unit.promotions.getAvailablePromotions()
-            val availablePromotions = if (unit.health <= 60
-                && promotions.any { it.hasUnique(UniqueType.OneTimeUnitHeal) }
-                && !(unit.baseUnit.isAirUnit() || unit.hasUnique(UniqueType.CanMoveAfterAttacking))
-            ) {
-                promotions.filter { it.hasUnique(UniqueType.OneTimeUnitHeal) }
-            } else promotions.filterNot { it.hasUnique(UniqueType.SkipPromotion) }
+            val availablePromotions = com.unciv.logic.automation.AutomationSelection.promotions(
+                unit.health, unit.baseUnit.isAirUnit() || unit.hasUnique(UniqueType.CanMoveAfterAttacking),
+                promotions.map { com.unciv.logic.automation.AutomationSelection.Promotion(
+                    it, it.hasUnique(UniqueType.OneTimeUnitHeal), it.hasUnique(UniqueType.SkipPromotion), it.hasUnique(UniqueType.FreePromotion)
+                ) }.toList()
+            )
 
             if (availablePromotions.none()) break
             val freePromotions = availablePromotions.filter { it.hasUnique(UniqueType.FreePromotion) }.toList()

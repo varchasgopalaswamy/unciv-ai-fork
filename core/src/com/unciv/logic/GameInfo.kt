@@ -751,7 +751,8 @@ class GameInfo : IsPartOfGameInfoSerialization, HasGameInfoSerializationVersion 
 
     // All cross-game data which needs to be altered (e.g. when removing or changing a name of a building/tech)
     // will be done here, and not in Civilization.setTransients or City
-    fun setTransients()  {
+    /** [rulesetOverride] retains an already resolved ruleset for detached previews. */
+    fun setTransients(rulesetOverride: Ruleset? = null)  {
         tileMap.gameInfo = this
 
         // [TEMPORARY] Convert old saves to newer ones by moving base rulesets from the mod list to the base ruleset field
@@ -777,14 +778,14 @@ class GameInfo : IsPartOfGameInfoSerialization, HasGameInfoSerializationVersion 
             }
         }
         
-        ruleset = RulesetCache.getComplexRuleset(gameParameters)
+        ruleset = rulesetOverride ?: RulesetCache.getComplexRuleset(gameParameters)
         
         // any mod the saved game lists that is currently not installed causes null pointer
         // exceptions in this routine unless it contained no new objects or was very simple.
         // Player's fault, so better complain early:
         val missingMods = (listOf(gameParameters.baseRuleset) + gameParameters.mods)
             .filterNot { it in ruleset.mods }
-        if (missingMods.isNotEmpty())
+        if (rulesetOverride == null && missingMods.isNotEmpty())
             throw MissingModsException(missingMods)
 
         removeMissingModReferences()

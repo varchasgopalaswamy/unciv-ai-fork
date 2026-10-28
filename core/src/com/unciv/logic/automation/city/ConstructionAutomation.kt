@@ -3,9 +3,11 @@ package com.unciv.logic.automation.city
 import com.unciv.GUI
 import com.unciv.UncivGame
 import com.unciv.logic.automation.Automation
+import com.unciv.logic.automation.AutomationSelection
 import com.unciv.logic.automation.civilization.NextTurnAutomation
 import com.unciv.logic.automation.unit.WorkerAutomation
 import com.unciv.logic.city.CityConstructions
+import com.unciv.logic.city.BuildingYieldPreview
 import com.unciv.logic.civilization.CityAction
 import com.unciv.logic.civilization.NotificationCategory
 import com.unciv.logic.civilization.NotificationIcon
@@ -38,6 +40,7 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
     private val relativeCostEffectiveness = ArrayList<ConstructionChoice>()
     private val cityState = city.state
     private val cityStats = city.cityStats
+    private val buildingYieldPreview by lazy { BuildingYieldPreview(civInfo.gameInfo) }
 
     private val personality = civInfo.getPersonality()
 
@@ -56,17 +59,21 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
         return false
     }
 
+    @Readonly
+    fun permitsCandidate(construction: IConstruction): Boolean =
+        !(civInfo.isHuman() && construction.name in city.disabledConstructions) && !shouldAvoidConstruction(construction)
+
     private val buildableBuildings = hashMapOf<String, Boolean>()
     private val buildableUnits = hashMapOf<String, Boolean>()
     private val buildings = city.getRuleset().buildings.values.asSequence()
-        .filterNot { (civInfo.isHuman() && it.name in city.disabledConstructions) || shouldAvoidConstruction(it) }
+        .filter { permitsCandidate(it) }
 
     private val nonWonders = buildings.filterNot { it.isAnyWonder() }
         .filterNot { buildableBuildings[it.name] == false } // if we already know that this building can't be built here then don't even consider it
 
     private val units = city.getRuleset().units.values.asSequence()
         .filterNot { buildableUnits[it.name] == false || // if we already know that this unit can't be built here then don't even consider it
-            (civInfo.isHuman() && it.name in city.disabledConstructions) || shouldAvoidConstruction(it) }
+            !permitsCandidate(it) }
 
     private val civUnits = civInfo.units.getCivUnits()
     private val militaryUnits = civUnits.count { it.baseUnit.isMilitary }
@@ -131,7 +138,14 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
                     PerpetualConstruction.Faith.isBuildable(cityConstructions) -> PerpetualConstruction.Faith
                     else -> PerpetualConstruction.Idle
                 }
-            } else { relativeCostEffectiveness.maxBy { (it.choiceModifier / it.remainingWork.coerceAtLeast(1)).coerceAtLeast(0f) }.choice }
+            } else {
+                com.unciv.logic.automation.AutomationSelection.construction(
+                    cityConstructions.getCurrentConstruction(), true,
+                    relativeCostEffectiveness.map {
+                        com.unciv.logic.automation.AutomationSelection.Construction(it.choice, it.choiceModifier, it.remainingWork)
+                    }, PerpetualConstruction.Idle
+                )
+            }
             //TODO: All bad things are build anyways at the moment, maybe let's stop doing that and chose perpetual construction instead
 
         // Do not notify while in resistance (you can't do anything about it) - still notify for puppets ("annex already!")
@@ -238,10 +252,7 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
         if (workerEquivalents.none()) return // for mods with no worker units
 
         // Dedicate 1 worker for the first city (CS), then 1.5 workers for the first 5 cities, from then on build one more worker for every city.
-        val numberOfWorkersWeWant = if (cities <= 1) 1f else if  (cities <= 5) (cities * 1.8f) else 9f + 1.3f * (cities - 5)
-
-        if (workers < numberOfWorkersWeWant) {
-            val modifier = numberOfWorkersWeWant / (workers + 0.17f) // The worse our worker to city ratio is, the more desperate we are
+        AutomationSelection.workerConstructionModifier(cities, workers)?.let { modifier ->
             addChoice(relativeCostEffectiveness, workerEquivalents.minBy { it.cost }, modifier)
         }
     }
@@ -256,22 +267,33 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
     }
 
     private fun addBuildingChoices() {
-        val cityBaseline = computeCityBaseline()
         for (building in buildings.filterBuildable()) {
             if (building.isWonder && city.isPuppet) continue
             // We shouldn't try to build wonders in undeveloped cities and empires
             if (building.isWonder && (!cityIsOverAverageProduction || civInfo.cities.sumOf { it.population.population } < 12)) continue
-            addChoice(relativeCostEffectiveness, building, getValueOfBuilding(building, cityBaseline))
+            addChoice(relativeCostEffectiveness, building, getValueOfBuilding(building))
         }
     }
 
-    private fun getValueOfBuilding(building: Building, cityBaseline: Stats): Float {
-        var value = 0f
-        value += applyBuildingStats(building, cityBaseline)
-        value += getMilitaryBuildingValue(building)
-        value += getVictoryBuildingValue(building)
-        value += getOnetimeUniqueBonuses(building)
-        return value
+    private fun getValueOfBuilding(building: Building): Float {
+        val compared = buildingYieldPreview.compare(city, building)
+        return buildingPreference(building, compared.after.automationTotal - compared.before.automationTotal, false)!!.value()
+    }
+
+    /**
+     * Detach a building's preference from an already permitted yield preview.
+     * Observer callers cannot rank world wonders or defensive structures: their
+     * native bonuses depend on foreign research rankings and undisclosed capitals.
+     * The caller retains actual buildability, production costs and progress.
+     */
+    fun buildingPreference(building: Building, difference: Stats, observerScoped: Boolean = true): AutomationSelection.BuildingPreference? {
+        if (observerScoped && !permitsCandidate(building)) return null
+        if (observerScoped && (building.isWonder && !building.isNationalWonder || building.cityHealth != 0 || building.cityStrength != 0.0)) return null
+        val yields = weightedBuildingStats(building, difference)
+        return AutomationSelection.BuildingPreference(
+            AutomationSelection.Yields(yields.food, yields.production, yields.gold, yields.science, yields.culture, yields.happiness, yields.faith),
+            getMilitaryBuildingValue(building) + getVictoryBuildingValue(building) + getOnetimeUniqueBonuses(building),
+            civInfo.gold, civInfo.stats.statsForNextTurn.gold)
     }
 
     @Readonly
@@ -319,7 +341,7 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
         var value = 0f
         var warModifier = if (isAtWar) 1f else .5f
         // If this city is the closest city to another civ, that makes it a likely candidate for attack
-        if (civInfo.getKnownCivs()
+        if ((building.cityHealth != 0 || building.cityStrength != 0.0) && civInfo.getKnownCivs()
                     .mapNotNull { NextTurnAutomation.getForeignCityNearCapital(it.getCapital(), civInfo) }
                     .any { it.city == city })
             warModifier *= 2f
@@ -338,8 +360,8 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
         return value
     }
 
-    private fun applyBuildingStats(building: Building, cityBaseline: Stats): Float {
-        val buildingStats = getStatDifferenceFromBuilding(building.name, cityBaseline)
+    private fun weightedBuildingStats(building: Building, difference: Stats): Stats {
+        val buildingStats = difference.clone()
         buildingStats.add(getBuildingStatsFromUniques(building, buildingStats))
 
         buildingStats.food *= 3
@@ -359,29 +381,7 @@ class ConstructionAutomation(val cityConstructions: CityConstructions) {
             buildingStats[stat] *= personality.scaledFocus(PersonalityValue[stat])
         }
 
-        return Automation.rankStatsValue(buildingStats.clone(), civInfo)
-    }
-
-    // NOT readonly safe, since it alters the tile ownership of real tiles
-    private fun computeCityBaseline(): Stats {
-        val baselineCity = city.clone()
-        baselineCity.setTransients(city.civ) // Will break the owned tiles. Needs to be reverted before leaving this function
-        //todo: breaks city connection; trade route gold is currently not considered for markets etc.
-        baselineCity.cityStats.update(updateCivStats = false, calculateGrowthModifiers = false) // Don't consider growth penalties for food values (we can work more mines/specialists instead of farms)
-        val baseline = baselineCity.cityStats.currentCityStats
-        city.expansion.setTransients() // Revert owned tiles to original city
-        return baseline
-    }
-
-    // NOT readonly safe, since it alters the tile ownership of real tiles
-    private fun getStatDifferenceFromBuilding(building: String, cityBaseline: Stats): Stats {
-        val newCity = city.clone()
-        newCity.setTransients(city.civ) // Will break the owned tiles. Needs to be reverted before leaving this function
-        newCity.cityConstructions.builtBuildings.add(building)
-        newCity.cityConstructions.setTransients()
-        newCity.cityStats.update(updateCivStats = false, calculateGrowthModifiers = false)
-        city.expansion.setTransients() // Revert owned tiles to original city
-        return newCity.cityStats.currentCityStats - cityBaseline
+        return buildingStats
     }
 
     @Readonly

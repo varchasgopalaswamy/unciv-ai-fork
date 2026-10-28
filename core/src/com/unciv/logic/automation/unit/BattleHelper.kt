@@ -159,8 +159,11 @@ object BattleHelper {
         val militaryUnit = attackTile.tileToAttack.militaryUnit
         val civilianUnit = attackTile.tileToAttack.civilianUnit
         if (militaryUnit != null) {
-            attackValue = 200 - militaryUnit.health + // continuously prioritise lower-health units
-                BattleDamage.calculateDamageToDefender(MapUnitCombatant(attacker), MapUnitCombatant(militaryUnit))
+            return com.unciv.logic.automation.AutomationSelection.militaryAttackValue(
+                militaryUnit.health,
+                BattleDamage.calculateDamageToDefender(MapUnitCombatant(attacker), MapUnitCombatant(militaryUnit)),
+                attackTile.movementLeftAfterMovingToAttackTile
+            )
         } else if (civilianUnit != null) {
             attackValue = 50
             // Only melee units should really attack/capture civilian units, ranged units may be able to capture by moving

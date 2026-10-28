@@ -29,6 +29,8 @@ class BuildingYieldPreview(private val source: GameInfo) {
         val foodPerTurn: Int,
         val turnsToGrowth: Int?,
         val turnsToStarvation: Int?,
+        /** Native construction valuation deliberately ignores food growth penalties. */
+        val automationTotal: Stats,
     )
 
     data class EmpireYields(val total: Stats, val happiness: Int, val cities: Map<String, Yields>)
@@ -88,12 +90,15 @@ class BuildingYieldPreview(private val source: GameInfo) {
     }
 
     private fun yields(city: City): Yields {
+        val automation = CityStats(city)
+        automation.statsFromTiles = city.cityStats.statsFromTiles.clone()
+        automation.update(updateTileStats = false, updateCivStats = false, calculateGrowthModifiers = false)
         val sources = city.cityStats.finalStatList.mapValues { it.value.clone() }.toMutableMap()
         for ((name, amount) in city.cityStats.happinessList)
             sources.getOrPut(name) { Stats() }.happiness = amount
         val total = city.cityStats.currentCityStats.clone()
         total.happiness = city.cityStats.happinessList.values.sum()
         return Yields(total, sources, -(city.cityStats.finalStatList["Maintenance"]?.gold ?: 0f),
-            city.foodForNextTurn(), city.population.getNumTurnsToNewPopulation(), city.population.getNumTurnsToStarvation())
+            city.foodForNextTurn(), city.population.getNumTurnsToNewPopulation(), city.population.getNumTurnsToStarvation(), automation.currentCityStats.clone())
     }
 }
