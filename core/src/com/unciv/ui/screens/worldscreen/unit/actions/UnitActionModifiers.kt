@@ -14,6 +14,11 @@ import kotlin.math.ceil
 
 object UnitActionModifiers {
     @Readonly
+    fun willConsumeUnit(unit: MapUnit, actionUnique: Unique): Boolean =
+        actionUnique.hasModifier(UniqueType.UnitActionConsumeUnit) ||
+            (actionUnique.hasModifier(UniqueType.UnitActionAfterWhichConsumed) && usagesLeft(unit, actionUnique) == 1)
+
+    @Readonly
     fun canUse(unit: MapUnit, actionUnique: Unique): Boolean {
         val usagesLeft = usagesLeft(unit, actionUnique)
         return usagesLeft == null || usagesLeft > 0

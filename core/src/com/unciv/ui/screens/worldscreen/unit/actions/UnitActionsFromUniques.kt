@@ -322,6 +322,17 @@ object UnitActionsFromUniques {
             val useFrequency = getUseFrequency(unit, unique, 85f)
 
             for (improvement in improvements) {
+                // Water-resource construction shares live validation and side effects with other callers.
+                if (unit.civ.isHuman()) {
+                    val operations = com.unciv.logic.civilization.PlayerWaterImprovementOperations(unit.civ)
+                    val option = operations.option(unit)
+                    if (option?.name == improvement.name) {
+                        yield(UnitAction(UnitActionType.CreateImprovement, getUseFrequency(unit, unique, 85f),
+                            title = option.title, associatedUnique = unique,
+                            action = { operations.tryCreate(unit, option.name); Unit }.takeIf { option.available }))
+                        continue
+                    }
+                }
                 // Try to skip Improvements we can never build
                 // (getImprovementBuildingProblems catches those so the button is always disabled, but it nevertheless looks nicer)
                 if (tile.improvementFunctions.getImprovementBuildingProblems(improvement, gameContext).any { it.permanent })
