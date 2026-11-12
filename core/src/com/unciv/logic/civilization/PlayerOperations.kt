@@ -101,9 +101,17 @@ class PlayerOperations(private val civ: Civilization, private val spectatorMode:
         }.map { it.name }
     }
 
-    fun tryQueueConstruction(city: City, name: String): Boolean = synchronized(civ.gameInfo) {
+    fun tryQueueConstruction(city: City, name: String): Boolean = tryAddConstruction(city, name, false)
+
+    /** Start a new entry using the city screen's add-to-top behavior in one atomic operation.
+     * Existing entries and accumulated production are retained, including duplicate units.
+     * Perpetual constructions follow the same replacement rules as the city screen.
+     */
+    fun tryStartConstruction(city: City, name: String): Boolean = tryAddConstruction(city, name, true)
+
+    private fun tryAddConstruction(city: City, name: String, addToTop: Boolean): Boolean = synchronized(civ.gameInfo) {
         if (!canAct() || name !in queueableConstructions(city)) return@synchronized false
-        city.cityConstructions.addToQueue(name)
+        city.cityConstructions.addToQueue(city.cityConstructions.getConstruction(name), addToTop)
         city.cityStats.update()
         true
     }

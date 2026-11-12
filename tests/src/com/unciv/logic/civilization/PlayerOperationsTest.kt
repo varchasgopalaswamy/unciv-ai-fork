@@ -1,6 +1,7 @@
 package com.unciv.logic.civilization
 
 import com.unciv.logic.civilization.PlayerTurnRequirements.Kind
+import com.unciv.models.ruleset.PerpetualConstruction
 import com.unciv.testing.BaseTestRunner
 import com.unciv.testing.TestGame
 import com.unciv.view.GameView
@@ -115,6 +116,43 @@ class PlayerOperationsTest {
         assertTrue(operations.tryQueueConstruction(city, "Monument"))
         assertFalse(operations.tryQueueConstruction(city, "Monument"))
         assertEquals(listOf("Monument"), city.cityConstructions.constructionQueue)
+    }
+
+    @Test
+    fun `starting construction adds at top and preserves duplicate units and production`() {
+        val queue = city.cityConstructions
+        queue.constructionQueue.clear()
+        assertTrue(operations.tryQueueConstruction(city, "Worker"))
+        queue.inProgressConstructions["Worker"] = 12
+        assertTrue(operations.tryQueueConstruction(city, "Monument"))
+        assertEquals(listOf("Worker", "Monument"), queue.constructionQueue)
+        assertTrue(operations.tryStartConstruction(city, "Worker"))
+        assertEquals(listOf("Worker", "Worker", "Monument"), queue.constructionQueue)
+        assertEquals(12, queue.getWorkDone("Worker"))
+        assertFalse(operations.tryStartConstruction(city, "Monument"))
+        assertFalse(operations.tryStartConstruction(city, "Unknown"))
+        assertFalse(operations.tryStartConstruction(foreignCity, "Worker"))
+        assertFalse(PlayerOperations(player, spectatorMode = true).tryStartConstruction(city, "Worker"))
+        assertEquals(listOf("Worker", "Worker", "Monument"), queue.constructionQueue)
+        city.isPuppet = true
+        assertFalse(operations.tryStartConstruction(city, "Worker"))
+        city.isPuppet = false
+        testGame.gameInfo.currentPlayer = other.civID
+        testGame.gameInfo.currentPlayerCiv = other
+        assertFalse(operations.tryStartConstruction(city, "Worker"))
+    }
+
+    @Test
+    fun `starting construction uses native idle perpetual and full queue rules`() {
+        val queue = city.cityConstructions
+        queue.constructionQueue.clear()
+        queue.constructionQueue.add(PerpetualConstruction.Idle.name)
+        assertTrue(operations.tryStartConstruction(city, "Worker"))
+        assertEquals(listOf("Worker"), queue.constructionQueue)
+        while (!queue.isQueueFull()) assertTrue(operations.tryQueueConstruction(city, "Worker"))
+        val before = queue.constructionQueue.toList()
+        assertFalse(operations.tryStartConstruction(city, "Worker"))
+        assertEquals(before, queue.constructionQueue)
     }
 
     @Test
