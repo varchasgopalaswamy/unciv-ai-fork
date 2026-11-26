@@ -119,6 +119,8 @@ class GameInfo : IsPartOfGameInfoSerialization, HasGameInfoSerializationVersion 
      * ignored because their original positions and witnesses cannot be recovered reliably.
      */
     private var attackEvents = ArrayList<AttackEvent>()
+    @Transient
+    var replayObserver: GameReplayObserver? = null
     var oneMoreTurnMode = false
     var currentPlayer = ""
     var currentTurnStartTime = System.currentTimeMillis()
@@ -386,6 +388,7 @@ class GameInfo : IsPartOfGameInfoSerialization, HasGameInfoSerializationVersion 
     /** Combat execution stores a record after explicitly finishing its recorder. */
     internal fun storeAttack(event: AttackEvent) {
         attackEvents.add(event)
+        replayObserver?.attackCompleted(event.id)
     }
 
     /** Explicit delivery after storage; formatting receives only each recipient's filtered View. */

@@ -945,6 +945,8 @@ class MapUnit : IsPartOfGameInfoSerialization {
     }
 
     fun destroy(destroyTransportedUnit: Boolean = true, attackRecorder: AttackRecorder? = null) {
+        val recorder = civ.gameInfo.replayObserver
+        val visibleBefore = if (recorder != null && hasTile()) replayWitnesses() else emptySet()
         attackRecorder?.recordDestruction(this)
         stopEscorting()
         currentMovement = 0f
@@ -961,6 +963,7 @@ class MapUnit : IsPartOfGameInfoSerialization {
         }
 
         isDestroyed = true
+        if (hasTile()) recorder?.unitRemoved(this, visibleBefore)
     }
 
     fun gift(recipient: Civilization) {
@@ -996,7 +999,13 @@ class MapUnit : IsPartOfGameInfoSerialization {
     }
 
     /** [attackRecorder] attaches captures during combat advancement to the enclosing attack. */
-    fun moveThroughTile(tile: Tile, attackRecorder: AttackRecorder? = null) {
+    fun moveThroughTile(tile: Tile, attackRecorder: AttackRecorder? = null) =
+        enterTile(tile, attackRecorder, initialPlacement = false, transit = emptyList())
+
+    private fun enterTile(tile: Tile, attackRecorder: AttackRecorder?, initialPlacement: Boolean, transit: List<HexCoord>) {
+        val recorder = civ.gameInfo.replayObserver
+        val from = if (recorder != null && !initialPlacement && hasTile()) currentTile.position else null
+        val visibleBefore = if (from != null && from != tile.position) replayWitnesses() else emptySet()
         // addPromotion requires currentTile to be valid because it accesses ruleset through it.
         // getAncientRuinBonus, if it places a new unit, does too
         currentTile = tile
@@ -1036,9 +1045,17 @@ class MapUnit : IsPartOfGameInfoSerialization {
         }
 
         updateVisibleTiles(true, currentTile.position)
+        if (!isDestroyed && from != tile.position) recorder?.unitEntered(this, from, visibleBefore, transit)
     }
 
-    fun putInTile(tile: Tile, attackRecorder: AttackRecorder? = null) {
+    private fun replayWitnesses(): Set<String> = civ.gameInfo.civilizations
+        .filter { it.isMajorCiv() && (it === civ || isVisibleTo(it)) }.mapTo(linkedSetOf()) { it.civID }
+
+    fun putInTile(tile: Tile, attackRecorder: AttackRecorder? = null) =
+        placeInTile(tile, attackRecorder)
+
+    internal fun placeInTile(tile: Tile, attackRecorder: AttackRecorder?, initialPlacement: Boolean = false,
+                             transit: List<HexCoord> = emptyList()) {
         when {
             !movement.canMoveTo(tile) -> {
                 val currentTile = if (hasTile()) currentTile else null
@@ -1057,7 +1074,7 @@ class MapUnit : IsPartOfGameInfoSerialization {
                 isTransported = currentUntransportedUnits > tile.getCity()!!.getMaxAirUnits()
             }
         }
-        moveThroughTile(tile, attackRecorder)
+        enterTile(tile, attackRecorder, initialPlacement, transit)
         cache.updateUniques()
     }
 

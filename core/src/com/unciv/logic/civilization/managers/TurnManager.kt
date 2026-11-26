@@ -25,6 +25,7 @@ class TurnManager(val civInfo: Civilization) {
 
 
     fun startTurn(progressBar: NextTurnProgress? = null):Unit = timeThis("TurnManager.startTurn") {
+        civInfo.gameInfo.replayObserver?.turnStarted(civInfo.civID)
         // GameInfo also starts turns for defeated civs, so their last attacks expire normally.
         civInfo.gameInfo.expireAttackEventsFor(civInfo.civID)
         if (civInfo.isSpectator()) return

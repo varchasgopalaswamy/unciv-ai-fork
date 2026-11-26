@@ -561,6 +561,7 @@ class UnitMovement(val unit: MapUnit) {
         var lastReachedEnterableTile = unit.getTile()
         var previousTile = unit.getTile()
         var passingMovementSpent = 0f // Movement points spent since last tile we could end our turn on
+        val transit = if (unit.civ.gameInfo.replayObserver != null) mutableListOf<HexCoord>() else null
 
 
         for (tile in pathToLastReachableTile) {
@@ -584,7 +585,8 @@ class UnitMovement(val unit: MapUnit) {
                 lastReachedEnterableTile = tile
                 unit.useMovementPoints(passingMovementSpent)
                 unit.removeFromTile()
-                unit.putInTile(tile, attackRecorder) // Required for ruins,
+                unit.placeInTile(tile, attackRecorder, transit = transit?.toList().orEmpty()) // Required for ruins,
+                transit?.clear()
 
                 if (escortUnit != null) {
                     escortUnit.movement.moveToTile(tile, attackRecorder = attackRecorder)
@@ -592,7 +594,7 @@ class UnitMovement(val unit: MapUnit) {
                 }
 
                 passingMovementSpent = 0f
-            }
+            } else transit?.add(tile.position)
 
             previousTile = tile
 

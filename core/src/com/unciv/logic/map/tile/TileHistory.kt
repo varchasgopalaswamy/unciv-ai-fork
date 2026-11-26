@@ -49,11 +49,13 @@ class TileHistory(
     fun recordTakeOwnership(tile: Tile) {
         history[tile.tileMap.gameInfo.turns] =
                 TileHistoryState(tile)
+        tile.tileMap.gameInfo.replayObserver?.territoryChanged(tile)
     }
 
     fun recordRelinquishOwnership(tile: Tile) {
         history[tile.tileMap.gameInfo.turns] =
                 TileHistoryState()
+        tile.tileMap.gameInfo.replayObserver?.territoryChanged(tile)
     }
 
     fun getState(turn: Int): TileHistoryState {
